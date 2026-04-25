@@ -6,6 +6,7 @@ import Header from '@/src/components/Header';
 import QuickActionButton from '@/src/components/QuickActionButton';
 import OverallStatusCard from '@/src/components/StatCard';
 import ZoneCard from '@/src/components/ZoneCard';
+import { fetchFarmSummary } from '@/src/services/api';
 import { globalStyles } from '@/src/styles/globalStyles';
 
 type FarmSummary = {
@@ -31,77 +32,21 @@ type FarmSummary = {
   }[];
 };
 
-const fallbackSummary: FarmSummary = {
-  lastUpdated: '21 Apr 2026, 21:55',
-  stats: {
-    soilMoisture: 68,
-    temperature: 29,
-    lightIntensity: 840,
-    waterTank: 74,
-    activeZones: 4,
-  },
-  zones: [
-    {
-      id: 'zone-a',
-      name: 'Zona A',
-      crop: 'Lahan Tomat',
-      moisture: 71,
-      temperature: 28,
-      lightIntensity: 860,
-      airHumidity: 64,
-      trendData: [62, 65, 66, 68, 70, 71],
-      initialValveOn: true,
-      status: 'optimal',
-    },
-    {
-      id: 'zone-b',
-      name: 'Zona B',
-      crop: 'Lahan Cabai',
-      moisture: 54,
-      temperature: 30,
-      lightIntensity: 920,
-      airHumidity: 59,
-      trendData: [61, 58, 56, 55, 54, 54],
-      initialValveOn: false,
-      status: 'warning',
-    },
-    {
-      id: 'zone-c',
-      name: 'Zona C',
-      crop: 'Lahan Selada',
-      moisture: 79,
-      temperature: 27,
-      lightIntensity: 710,
-      airHumidity: 68,
-      trendData: [72, 73, 76, 75, 78, 79],
-      initialValveOn: false,
-      status: 'optimal',
-    },
-  ],
-};
-
-async function fetchFarmSummary(): Promise<FarmSummary> {
-  // Ganti fungsi ini dengan API atau MQTT client saat integrasi backend tersedia.
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(fallbackSummary), 450);
-  });
-}
-
 export default function HomeScreen() {
   const [summary, setSummary] = useState<FarmSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const loadSummary = useCallback(async (refreshing = false) => {
+  const loadSummary = useCallback(async (mode: 'initial' | 'refresh' | 'poll' = 'initial') => {
     try {
-      if (refreshing) {
+      if (mode === 'refresh') {
         setIsRefreshing(true);
-      } else {
+      } else if (mode === 'initial') {
         setIsLoading(true);
       }
       setErrorMessage(null);
-      const data = await fetchFarmSummary();
+      const data = (await fetchFarmSummary()) as FarmSummary;
       setSummary(data);
     } catch {
       setErrorMessage('Data kebun belum bisa dimuat. Coba refresh sebentar lagi.');
@@ -115,6 +60,14 @@ export default function HomeScreen() {
     loadSummary();
   }, [loadSummary]);
 
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      loadSummary('poll');
+    }, 20000);
+
+    return () => clearInterval(intervalId);
+  }, [loadSummary]);
+
   const showAction = (message: string) => {
     Alert.alert('Aksi cepat', message);
   };
@@ -123,7 +76,7 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
         contentContainerStyle={styles.content}
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadSummary(true)} />}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadSummary('refresh')} />}
         showsVerticalScrollIndicator={false}>
         <Header isOnline={!errorMessage} />
 

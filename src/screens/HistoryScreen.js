@@ -1,31 +1,23 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { fetchHistory } from '@/src/services/api';
 import { globalStyles } from '@/src/styles/globalStyles';
 
-const chartData = [
-  { day: 'Sen', value: 220 },
-  { day: 'Sel', value: 160 },
-  { day: 'Rab', value: 290 },
-  { day: 'Kam', value: 170 },
-  { day: 'Jum', value: 250 },
-  { day: 'Sab', value: 335 },
-  { day: 'Min', value: 80 },
-];
-
-const pastEvents = [
-  { id: 'event-1', date: '19 Okt', time: '07:00', zone: 'Zona A', duration: '30 menit', water: '510 L' },
-  { id: 'event-2', date: '18 Okt', time: '07:00', zone: 'Zona A', duration: '30 menit', water: '510 L' },
-  { id: 'event-3', date: '17 Okt', time: '07:00', zone: 'Zona A', duration: '30 menit', water: '510 L' },
-];
+const initialHistory = {
+  chartData: [],
+  lastCycle: null,
+  pastEvents: [],
+};
 
 function Card({ children, style }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-function HistoricalChart() {
+function HistoricalChart({ chartData }) {
   const maxValue = 400;
 
   return (
@@ -62,7 +54,7 @@ function HistoricalChart() {
   );
 }
 
-function PastEvents() {
+function PastEvents({ pastEvents }) {
   return (
     <Card style={styles.eventsCard}>
       <Text style={styles.cardTitle}>Riwayat Kejadian</Text>
@@ -80,6 +72,40 @@ function PastEvents() {
 
 export default function HistoryScreen() {
   const router = useRouter();
+  const [history, setHistory] = useState(initialHistory);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [errorMessage, setErrorMessage] = useState(null);
+
+  const loadHistory = useCallback(async (mode = 'initial') => {
+    try {
+      if (mode === 'refresh') {
+        setIsRefreshing(true);
+      } else if (mode === 'initial') {
+        setIsLoading(true);
+      }
+      setErrorMessage(null);
+      const data = await fetchHistory();
+      setHistory(data);
+    } catch {
+      setErrorMessage('Riwayat belum bisa dimuat.');
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      loadHistory('poll');
+    }, 20000);
+
+    return () => clearInterval(intervalId);
+  }, [loadHistory]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -88,15 +114,33 @@ export default function HistoryScreen() {
         <Text style={styles.topTitle}>Riwayat</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Card>
-          <Text style={styles.lastCycleTitle}>Siklus Terakhir: <Text style={styles.boldText}>20 Okt 2023</Text></Text>
-          <Text style={styles.lastCycleText}>Zona A - Lahan Tomat</Text>
-          <Text style={styles.lastCycleText}>30 menit, 500 liter</Text>
-        </Card>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadHistory('refresh')} />}
+        showsVerticalScrollIndicator={false}>
+        {isLoading ? (
+          <View style={styles.stateBox}>
+            <ActivityIndicator color="#3c6255" />
+            <Text style={styles.stateText}>Memuat riwayat...</Text>
+          </View>
+        ) : null}
 
-        <HistoricalChart />
-        <PastEvents />
+        {errorMessage ? (
+          <View style={styles.stateBox}>
+            <Text style={styles.stateText}>{errorMessage}</Text>
+          </View>
+        ) : null}
+
+        {history.lastCycle ? (
+          <Card>
+            <Text style={styles.lastCycleTitle}>Siklus Terakhir: <Text style={styles.boldText}>{history.lastCycle.date}</Text></Text>
+            <Text style={styles.lastCycleText}>{history.lastCycle.zone}</Text>
+            <Text style={styles.lastCycleText}>{history.lastCycle.duration}, {history.lastCycle.water}</Text>
+          </Card>
+        ) : null}
+
+        <HistoricalChart chartData={history.chartData} />
+        <PastEvents pastEvents={history.pastEvents} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -125,6 +169,16 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 8,
     paddingBottom: 24,
+  },
+  stateBox: {
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 28,
+  },
+  stateText: {
+    color: '#5b655f',
+    fontSize: 14,
+    fontWeight: '700',
   },
   card: {
     backgroundColor: '#ffffff',

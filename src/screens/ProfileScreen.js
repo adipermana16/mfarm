@@ -62,25 +62,29 @@ export default function ProfileScreen() {
     setIsEditing(false);
   };
 
-  const saveProfile = () => {
+  const saveProfile = async () => {
     if (!draft.name.trim()) {
       Alert.alert('Profil belum lengkap', 'Nama tidak boleh kosong.');
       return;
     }
 
-    updateProfile({
-      ...draft,
-      name: draft.name.trim(),
-      role: draft.role.trim(),
-      location: draft.location.trim(),
-      email: draft.email.trim(),
-      phone: draft.phone.trim(),
-      farmName: draft.farmName.trim(),
-      farmArea: draft.farmArea.trim(),
-      activeSince: draft.activeSince.trim(),
-    });
-    setIsEditing(false);
-    Alert.alert('Profil tersimpan', 'Perubahan profil berhasil disimpan.');
+    try {
+      await updateProfile({
+        ...draft,
+        name: draft.name.trim(),
+        role: draft.role.trim(),
+        location: draft.location.trim(),
+        email: draft.email.trim(),
+        phone: draft.phone.trim(),
+        farmName: draft.farmName.trim(),
+        farmArea: draft.farmArea.trim(),
+        activeSince: draft.activeSince.trim(),
+      });
+      setIsEditing(false);
+      Alert.alert('Profil tersimpan', 'Perubahan profil berhasil disimpan.');
+    } catch {
+      Alert.alert('Profil belum tersimpan', 'Backend belum merespons. Silakan coba lagi.');
+    }
   };
 
   return (

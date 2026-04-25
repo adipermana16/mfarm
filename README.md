@@ -16,6 +16,26 @@ Ini adalah proyek [Expo](https://expo.dev) untuk aplikasi irigasi SmartDrip.
    npx expo start
    ```
 
+3. Jalankan backend Flask
+
+   ```bash
+   cd ../backend
+   pip install -r requirements.txt
+   python app.py
+   ```
+
+Atau jalankan backend dan frontend sekaligus dari root project:
+
+```bash
+python scripts/run_dev.py
+```
+
+Alternatif lewat npm:
+
+```bash
+npm run dev
+```
+
 Pada output terminal, kamu bisa memilih untuk membuka aplikasi di:
 
 - [build pengembangan](https://docs.expo.dev/develop/development-builds/introduction/)
@@ -24,6 +44,22 @@ Pada output terminal, kamu bisa memilih untuk membuka aplikasi di:
 - [Expo Go](https://expo.dev/go), sandbox terbatas untuk mencoba pengembangan aplikasi Expo
 
 Pengembangan bisa dimulai dari file di direktori **app**. Proyek ini memakai [routing berbasis file](https://docs.expo.dev/router/introduction).
+
+Backend tersedia di `http://localhost:5000/api` dengan endpoint utama:
+
+- `GET /api/farm-summary`
+- `GET /api/schedules`
+- `POST /api/schedules`
+- `PATCH /api/schedules/<id>`
+- `GET /api/history`
+- `GET /api/profile`
+- `PUT /api/profile`
+
+Jika akses dari device fisik tidak terbaca otomatis, set env berikut sebelum menjalankan Expo:
+
+```bash
+EXPO_PUBLIC_API_BASE_URL=http://IP-LAPTOP-KAMU:5000/api
+```
 
 ## Reset Proyek
 

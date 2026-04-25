@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -13,54 +14,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import ScheduleCard from '@/src/components/ScheduleCard';
+import { fetchSchedules, updateScheduleStatus } from '@/src/services/api';
 import { globalStyles } from '@/src/styles/globalStyles';
-
-const fallbackSchedules = [
-  {
-    id: 'schedule-a',
-    name: 'Siram Pagi',
-    zoneName: 'Zona A',
-    fieldName: 'Lahan Tomat',
-    time: '06:00',
-    duration: '15 menit',
-    days: 'Sen, Rab, Jum',
-    isEnabled: true,
-  },
-  {
-    id: 'schedule-b',
-    name: 'Siram Sore',
-    zoneName: 'Zona B',
-    fieldName: 'Lahan Cabai',
-    time: '17:30',
-    duration: '20 menit',
-    days: 'Setiap hari',
-    isEnabled: true,
-  },
-  {
-    id: 'schedule-c',
-    name: 'Kabut Siang',
-    zoneName: 'Zona C',
-    fieldName: 'Lahan Selada',
-    time: '09:15',
-    duration: '10 menit',
-    days: 'Sel, Kam, Sab',
-    isEnabled: false,
-  },
-];
-
-async function fetchSchedules() {
-  // Ganti fungsi ini dengan query database/API saat backend sudah tersedia.
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(fallbackSchedules), 400);
-  });
-}
-
-async function updateScheduleStatus(scheduleId, isEnabled) {
-  // Ganti fungsi ini dengan request PATCH/PUT ke API saat backend tersedia.
-  return new Promise((resolve) => {
-    setTimeout(() => resolve({ scheduleId, isEnabled }), 250);
-  });
-}
 
 export default function SchedulesScreen() {
   const router = useRouter();
@@ -69,11 +24,11 @@ export default function SchedulesScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
 
-  const loadSchedules = useCallback(async (refreshing = false) => {
+  const loadSchedules = useCallback(async (mode = 'initial') => {
     try {
-      if (refreshing) {
+      if (mode === 'refresh') {
         setIsRefreshing(true);
-      } else {
+      } else if (mode === 'initial') {
         setIsLoading(true);
       }
       setErrorMessage(null);
@@ -91,17 +46,35 @@ export default function SchedulesScreen() {
     loadSchedules();
   }, [loadSchedules]);
 
+  useFocusEffect(
+    useCallback(() => {
+      loadSchedules('poll');
+    }, [loadSchedules]),
+  );
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      loadSchedules('poll');
+    }, 20000);
+
+    return () => clearInterval(intervalId);
+  }, [loadSchedules]);
+
   const openAddSchedule = () => {
     router.push('/add-schedule');
   };
 
   const handleToggleSchedule = async (scheduleId, isEnabled) => {
-    await updateScheduleStatus(scheduleId, isEnabled);
-    setSchedules((currentSchedules) =>
-      currentSchedules.map((schedule) =>
-        schedule.id === scheduleId ? { ...schedule, isEnabled } : schedule,
-      ),
-    );
+    try {
+      await updateScheduleStatus(scheduleId, isEnabled);
+      setSchedules((currentSchedules) =>
+        currentSchedules.map((schedule) =>
+          schedule.id === scheduleId ? { ...schedule, isEnabled } : schedule,
+        ),
+      );
+    } catch {
+      setErrorMessage('Status jadwal belum bisa diperbarui.');
+    }
   };
 
   return (
@@ -140,7 +113,7 @@ export default function SchedulesScreen() {
             </View>
           </View>
         }
-        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadSchedules(true)} />}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadSchedules('refresh')} />}
         renderItem={({ item }) => (
           <ScheduleCard onToggleChange={handleToggleSchedule} schedule={item} />
         )}

@@ -1,7 +1,7 @@
 import Slider from '@react-native-community/slider';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,13 +14,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { createSchedule, fetchFarmSummary } from '@/src/services/api';
 import { buttonStyles, controlStyles, globalStyles, sharedStyles } from '@/src/styles/globalStyles';
-
-const zones = [
-  { label: 'Zona A - Lahan Tomat', value: 'zone-a' },
-  { label: 'Zona B - Lahan Cabai', value: 'zone-b' },
-  { label: 'Zona C - Lahan Selada', value: 'zone-c' },
-];
 
 const days = [
   { label: 'Sn', value: 'mon' },
@@ -37,13 +32,6 @@ const triggerOptions = [
   { label: 'Jika Tanah < 45%', value: 'soil_below_45' },
   { label: 'Lewati Jika Hujan', value: 'skip_if_rain' },
 ];
-
-async function saveSchedule(payload) {
-  // Ganti fungsi ini dengan request POST ke API saat backend tersedia.
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(payload), 600);
-  });
-}
 
 function DropdownField({ label, value, options, onChange }) {
   const [isOpen, setIsOpen] = useState(false);
@@ -80,14 +68,58 @@ function DropdownField({ label, value, options, onChange }) {
 
 export default function AddScheduleScreen() {
   const router = useRouter();
-  const [scheduleName] = useState('Siram Pagi');
-  const [selectedZone, setSelectedZone] = useState('zone-a');
+  const [scheduleName, setScheduleName] = useState('Siram Pagi');
+  const [zones, setZones] = useState([]);
+  const [selectedZone, setSelectedZone] = useState('');
   const [selectedDays, setSelectedDays] = useState(['mon', 'wed', 'fri']);
   const [startTime, setStartTime] = useState('06:00');
   const [duration, setDuration] = useState(15);
   const [triggerLogic, setTriggerLogic] = useState('time_only');
   const [errorMessage, setErrorMessage] = useState(null);
+  const [isLoadingZones, setIsLoadingZones] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadZones() {
+      try {
+        setIsLoadingZones(true);
+        setErrorMessage(null);
+        const summary = await fetchFarmSummary();
+        if (!isMounted) {
+          return;
+        }
+
+        const nextZones = summary.zones.map((zone) => ({
+          label: `${zone.name} - ${zone.crop}`,
+          value: zone.id,
+        }));
+
+        setZones(nextZones);
+        setSelectedZone((currentZone) => currentZone || nextZones[0]?.value || '');
+      } catch {
+        if (isMounted) {
+          setErrorMessage('Daftar zona belum bisa dimuat dari backend.');
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoadingZones(false);
+        }
+      }
+    }
+
+    loadZones();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const selectedZoneLabel = useMemo(
+    () => zones.find((zone) => zone.value === selectedZone)?.label,
+    [selectedZone, zones],
+  );
 
   const toggleDay = (dayValue) => {
     setSelectedDays((currentDays) =>
@@ -113,10 +145,15 @@ export default function AddScheduleScreen() {
       return;
     }
 
+    if (!selectedZone) {
+      setErrorMessage('Zona tujuan belum tersedia.');
+      return;
+    }
+
     try {
       setIsSaving(true);
       setErrorMessage(null);
-      await saveSchedule({
+      await createSchedule({
         duration,
         name: scheduleName.trim(),
         selectedDays,
@@ -149,8 +186,33 @@ export default function AddScheduleScreen() {
           </View>
 
           <View style={styles.fieldGroup}>
+            <Text style={styles.label}>Nama Jadwal</Text>
+            <TextInput
+              onChangeText={setScheduleName}
+              placeholder="Contoh: Siram Pagi"
+              placeholderTextColor="#767577"
+              style={styles.input}
+              value={scheduleName}
+            />
+          </View>
+
+          <View style={styles.fieldGroup}>
             <Text style={styles.label}>Zona Tujuan</Text>
-            <DropdownField label="" onChange={setSelectedZone} options={zones} value={selectedZone} />
+            {isLoadingZones ? (
+              <View style={styles.inlineLoading}>
+                <ActivityIndicator color={globalStyles.colors.primaryGreen} />
+                <Text style={styles.inlineLoadingText}>Memuat zona kebun...</Text>
+              </View>
+            ) : zones.length > 0 ? (
+              <DropdownField label="" onChange={setSelectedZone} options={zones} value={selectedZone} />
+            ) : (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>Belum ada zona yang tersedia.</Text>
+              </View>
+            )}
+            {!isLoadingZones && selectedZoneLabel ? (
+              <Text style={styles.helperText}>Terhubung ke backend: {selectedZoneLabel}</Text>
+            ) : null}
           </View>
 
           <View style={styles.fieldGroup}>
@@ -445,6 +507,22 @@ const styles = StyleSheet.create({
     color: '#c2410c',
     fontSize: 13,
     fontWeight: '800',
+  },
+  helperText: {
+    color: '#5b655f',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  inlineLoading: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    minHeight: 40,
+  },
+  inlineLoadingText: {
+    color: '#5b655f',
+    fontSize: 13,
+    fontWeight: '600',
   },
   saveButton: {
     alignItems: 'center',
