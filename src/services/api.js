@@ -66,8 +66,19 @@ export function updateScheduleStatus(scheduleId, isEnabled) {
   });
 }
 
-export function fetchHistory() {
-  return request('/history');
+export function fetchHistory(params = {}) {
+  const searchParams = new URLSearchParams();
+
+  if (params.month) {
+    searchParams.set('month', String(params.month));
+  }
+
+  if (params.year) {
+    searchParams.set('year', String(params.year));
+  }
+
+  const query = searchParams.toString();
+  return request(query ? `/history?${query}` : '/history');
 }
 
 export function fetchProfile() {

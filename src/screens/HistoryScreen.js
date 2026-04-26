@@ -1,33 +1,37 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, AppState, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { fetchHistory } from '@/src/services/api';
 import { globalStyles } from '@/src/styles/globalStyles';
 
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+const YEAR_OPTIONS = Array.from({ length: 5 }, (_, index) => new Date().getFullYear() - 2 + index);
 const initialHistory = {
   chartData: [],
   lastCycle: null,
   pastEvents: [],
+  selectedMonth: null,
 };
 
 function Card({ children, style }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-function HistoricalChart({ chartData }) {
-  const maxValue = 400;
+function HistoricalChart({ chartData, selectedMonthLabel, onOpenMonthPicker }) {
+  const maxValue = Math.max(...chartData.map((item) => item.value), 400);
 
   return (
     <Card>
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>Data Historis Siklus Penyiraman</Text>
-        <View style={styles.segmented}>
-          <Text style={[styles.segmentText, styles.segmentActive]}>Terakhir</Text>
-          <Text style={styles.segmentText}>Januari</Text>
-        </View>
+        <Pressable onPress={onOpenMonthPicker} style={({ pressed }) => [styles.monthFilter, pressed && styles.monthFilterPressed]}>
+          <Text style={styles.monthLabel}>{selectedMonthLabel}</Text>
+          <MaterialCommunityIcons name="chevron-down" size={18} color="#111111" />
+        </Pressable>
       </View>
 
       <View style={styles.chartArea}>
@@ -76,8 +80,23 @@ export default function HistoryScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState(null);
+  const isRequestingRef = useRef(false);
+  const [isMonthPickerVisible, setIsMonthPickerVisible] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return {
+      month: now.getMonth() + 1,
+      year: now.getFullYear(),
+    };
+  });
 
   const loadHistory = useCallback(async (mode = 'initial') => {
+    if (isRequestingRef.current) {
+      return;
+    }
+
+    isRequestingRef.current = true;
+
     try {
       if (mode === 'refresh') {
         setIsRefreshing(true);
@@ -85,27 +104,61 @@ export default function HistoryScreen() {
         setIsLoading(true);
       }
       setErrorMessage(null);
-      const data = await fetchHistory();
+      const data = await fetchHistory(selectedMonth);
       setHistory(data);
     } catch {
       setErrorMessage('Riwayat belum bisa dimuat.');
     } finally {
+      isRequestingRef.current = false;
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, []);
+  }, [selectedMonth]);
 
   useEffect(() => {
     loadHistory();
   }, [loadHistory]);
 
-  useEffect(() => {
-    const intervalId = setInterval(() => {
+  useFocusEffect(
+    useCallback(() => {
       loadHistory('poll');
-    }, 20000);
 
-    return () => clearInterval(intervalId);
-  }, [loadHistory]);
+      const intervalId = setInterval(() => {
+        loadHistory('poll');
+      }, 5000);
+
+      const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
+        if (nextAppState === 'active') {
+          loadHistory('poll');
+        }
+      });
+
+      return () => {
+        clearInterval(intervalId);
+        appStateSubscription.remove();
+      };
+    }, [loadHistory]),
+  );
+
+  const handleSelectMonth = useCallback((month) => {
+    setSelectedMonth((current) => ({
+      ...current,
+      month,
+    }));
+  }, []);
+
+  const handleSelectYear = useCallback((year) => {
+    setSelectedMonth((current) => ({
+      ...current,
+      year,
+    }));
+  }, []);
+
+  const applyMonthFilter = useCallback(() => {
+    setIsMonthPickerVisible(false);
+  }, []);
+
+  const selectedMonthLabel = history.selectedMonth?.label ?? `${MONTH_LABELS[selectedMonth.month - 1]} ${selectedMonth.year}`;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -139,9 +192,69 @@ export default function HistoryScreen() {
           </Card>
         ) : null}
 
-        <HistoricalChart chartData={history.chartData} />
+        <HistoricalChart
+          chartData={history.chartData}
+          onOpenMonthPicker={() => setIsMonthPickerVisible(true)}
+          selectedMonthLabel={selectedMonthLabel}
+        />
         <PastEvents pastEvents={history.pastEvents} />
       </ScrollView>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={isMonthPickerVisible}
+        onRequestClose={() => setIsMonthPickerVisible(false)}>
+        <Pressable style={styles.modalOverlay} onPress={() => setIsMonthPickerVisible(false)}>
+          <Pressable style={styles.monthModalCard} onPress={() => null}>
+            <Text style={styles.monthModalTitle}>Pilih Bulan dan Tahun</Text>
+            <View style={styles.yearOptions}>
+              {YEAR_OPTIONS.map((year) => {
+                const isActive = selectedMonth.year === year;
+
+                return (
+                  <Pressable
+                    key={year}
+                    onPress={() => handleSelectYear(year)}
+                    style={({ pressed }) => [
+                      styles.yearOption,
+                      isActive && styles.yearOptionActive,
+                      pressed && styles.monthOptionPressed,
+                    ]}>
+                    <Text style={[styles.yearOptionText, isActive && styles.monthOptionTextActive]}>
+                      {year}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={styles.monthOptions}>
+              {MONTH_LABELS.map((label, index) => {
+                const monthNumber = index + 1;
+                const isActive = selectedMonth.month === monthNumber;
+
+                return (
+                  <Pressable
+                    key={label}
+                    onPress={() => handleSelectMonth(monthNumber)}
+                    style={({ pressed }) => [
+                      styles.monthOption,
+                      isActive && styles.monthOptionActive,
+                      pressed && styles.monthOptionPressed,
+                    ]}>
+                    <Text style={[styles.monthOptionText, isActive && styles.monthOptionTextActive]}>
+                      {label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <Pressable onPress={applyMonthFilter} style={({ pressed }) => [styles.applyButton, pressed && styles.applyButtonPressed]}>
+              <Text style={styles.applyButtonText}>Terapkan</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -218,20 +331,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 22,
   },
-  segmented: {
+  monthFilter: {
+    alignItems: 'center',
     backgroundColor: '#D9D9D9',
-    borderRadius: 4,
+    borderRadius: 8,
     flexDirection: 'row',
-    paddingHorizontal: 7,
-    paddingVertical: 4,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
   },
-  segmentText: {
+  monthFilterPressed: {
+    opacity: 0.85,
+  },
+  monthLabel: {
     color: '#111111',
     fontSize: 12,
-    marginHorizontal: 2,
-  },
-  segmentActive: {
     fontWeight: '700',
+    minWidth: 64,
+    textAlign: 'center',
   },
   chartArea: {
     flexDirection: 'row',
@@ -250,6 +367,7 @@ const styles = StyleSheet.create({
   },
   plotArea: {
     flex: 1,
+    paddingHorizontal: 8,
     position: 'relative',
   },
   gridLine: {
@@ -262,15 +380,16 @@ const styles = StyleSheet.create({
   barRow: {
     alignItems: 'flex-end',
     flexDirection: 'row',
+    gap: 8,
     height: 136,
-    justifyContent: 'space-around',
+    justifyContent: 'space-between',
     paddingTop: 1,
   },
   barSlot: {
     alignItems: 'center',
+    flex: 1,
     height: 136,
     justifyContent: 'flex-end',
-    width: 22,
   },
   bar: {
     backgroundColor: '#58A05C',
@@ -305,5 +424,87 @@ const styles = StyleSheet.create({
     color: '#111111',
     fontSize: 14,
     textAlign: 'right',
+  },
+  modalOverlay: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.28)',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
+  },
+  monthModalCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 16,
+    width: '100%',
+  },
+  monthModalTitle: {
+    color: '#111111',
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  monthOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  yearOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 14,
+  },
+  monthOption: {
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 10,
+    minWidth: '22%',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  monthOptionActive: {
+    backgroundColor: globalStyles.colors.primaryGreen,
+  },
+  monthOptionPressed: {
+    opacity: 0.86,
+  },
+  monthOptionText: {
+    color: '#111111',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  monthOptionTextActive: {
+    color: '#ffffff',
+  },
+  yearOption: {
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  yearOptionActive: {
+    backgroundColor: globalStyles.colors.primaryGreen,
+  },
+  yearOptionText: {
+    color: '#111111',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  applyButton: {
+    alignItems: 'center',
+    backgroundColor: globalStyles.colors.primaryGreen,
+    borderRadius: 10,
+    marginTop: 16,
+    paddingVertical: 12,
+  },
+  applyButtonPressed: {
+    opacity: 0.88,
+  },
+  applyButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
   },
 });
