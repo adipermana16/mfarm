@@ -23,10 +23,10 @@ function HistoricalChart({ chartData }) {
   return (
     <Card>
       <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>Data Historis</Text>
+        <Text style={styles.cardTitle}>Data Historis Siklus Penyiraman</Text>
         <View style={styles.segmented}>
           <Text style={[styles.segmentText, styles.segmentActive]}>Terakhir</Text>
-          <Text style={styles.segmentText}>atau Bulan</Text>
+          <Text style={styles.segmentText}>Januari</Text>
         </View>
       </View>
 
