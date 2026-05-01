@@ -6,7 +6,7 @@ import Header from '@/src/components/Header';
 import QuickActionButton from '@/src/components/QuickActionButton';
 import OverallStatusCard from '@/src/components/StatCard';
 import ZoneCard from '@/src/components/ZoneCard';
-import { fetchFarmSummary } from '@/src/services/api';
+import { API_BASE_URL, fetchFarmSummary } from '@/src/services/api';
 import { globalStyles } from '@/src/styles/globalStyles';
 
 type FarmSummary = {
@@ -48,8 +48,9 @@ export default function HomeScreen() {
       setErrorMessage(null);
       const data = (await fetchFarmSummary()) as FarmSummary;
       setSummary(data);
-    } catch {
-      setErrorMessage('Data kebun belum bisa dimuat. Coba refresh sebentar lagi.');
+    } catch (error) {
+      const details = error instanceof Error ? error.message : 'Periksa koneksi aplikasi dan server.';
+      setErrorMessage(`Data kebun belum bisa dimuat dari ${API_BASE_URL}. ${details}`);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);

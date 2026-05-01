@@ -55,11 +55,13 @@ Backend tersedia di `http://localhost:5000/api` dengan endpoint utama:
 - `GET /api/profile`
 - `PUT /api/profile`
 
-Jika akses dari device fisik tidak terbaca otomatis, set env berikut sebelum menjalankan Expo:
+Jika aplikasi akan dihubungkan ke VPS, buat file `.env` di folder `mfarm` dengan isi berikut sebelum menjalankan Expo:
 
 ```bash
-EXPO_PUBLIC_API_BASE_URL=http://IP-LAPTOP-KAMU:5000/api
+EXPO_PUBLIC_API_BASE_URL=http://109.110.188.181:5000/api
 ```
+
+Backend Flask pada project ini sudah dijalankan di `0.0.0.0:5000`, jadi dari sisi aplikasi cukup pastikan port `5000` di VPS terbuka dan mengarah ke service backend.
 
 ## Reset Proyek
 

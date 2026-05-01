@@ -25,20 +25,30 @@ function resolveApiBaseUrl() {
 export const API_BASE_URL = resolveApiBaseUrl();
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      ...(options.headers ?? {}),
-    },
-    ...options,
-  });
+  let response;
+
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        ...(options.headers ?? {}),
+      },
+      ...options,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error && error.message
+        ? error.message
+        : 'Tidak bisa terhubung ke server.';
+    throw new Error(`Koneksi ke ${API_BASE_URL} gagal. ${message}`);
+  }
 
   const isJson = response.headers.get('content-type')?.includes('application/json');
   const data = isJson ? await response.json() : null;
 
   if (!response.ok) {
-    throw new Error(data?.message ?? 'Permintaan ke server gagal.');
+    throw new Error(data?.message ?? `Permintaan ke ${API_BASE_URL}${path} gagal.`);
   }
 
   return data;
