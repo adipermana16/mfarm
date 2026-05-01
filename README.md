@@ -45,23 +45,26 @@ Pada output terminal, kamu bisa memilih untuk membuka aplikasi di:
 
 Pengembangan bisa dimulai dari file di direktori **app**. Proyek ini memakai [routing berbasis file](https://docs.expo.dev/router/introduction).
 
-Backend tersedia di `http://localhost:5000/api` dengan endpoint utama:
+Backend drip tersedia di `http://localhost:5000/api/drip` dengan endpoint utama:
 
-- `GET /api/farm-summary`
-- `GET /api/schedules`
-- `POST /api/schedules`
-- `PATCH /api/schedules/<id>`
-- `GET /api/history`
-- `GET /api/profile`
-- `PUT /api/profile`
+- `GET /api/drip/health`
+- `GET /api/drip/farm-summary`
+- `GET /api/drip/iot/readings`
+- `POST /api/drip/iot/readings`
+- `GET /api/drip/schedules`
+- `POST /api/drip/schedules`
+- `PATCH /api/drip/schedules/<id>`
+- `GET /api/drip/history`
+- `GET /api/drip/profile`
+- `PUT /api/drip/profile`
 
 Jika aplikasi akan dihubungkan ke VPS, buat file `.env` di folder `mfarm` dengan isi berikut sebelum menjalankan Expo:
 
 ```bash
-EXPO_PUBLIC_API_BASE_URL=http://109.110.188.181:5000/api
+EXPO_PUBLIC_API_BASE_URL=http://109.110.188.181/api/drip
 ```
 
-Backend Flask pada project ini sudah dijalankan di `0.0.0.0:5000`, jadi dari sisi aplikasi cukup pastikan port `5000` di VPS terbuka dan mengarah ke service backend.
+Jika env diisi hanya host dasar atau `.../api`, aplikasi sekarang akan menormalkannya otomatis ke namespace `.../api/drip`.
 
 ## Reset Proyek
 

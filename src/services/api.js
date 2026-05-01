@@ -1,10 +1,24 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
+function normalizeApiBaseUrl(baseUrl) {
+  const sanitizedBaseUrl = baseUrl.replace(/\/+$/, '');
+
+  if (sanitizedBaseUrl.endsWith('/api/drip')) {
+    return sanitizedBaseUrl;
+  }
+
+  if (sanitizedBaseUrl.endsWith('/api')) {
+    return `${sanitizedBaseUrl}/drip`;
+  }
+
+  return `${sanitizedBaseUrl}/api/drip`;
+}
+
 function resolveApiBaseUrl() {
   const configuredBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
   if (configuredBaseUrl) {
-    return configuredBaseUrl.replace(/\/+$/, '');
+    return normalizeApiBaseUrl(configuredBaseUrl);
   }
 
   const expoHost =
@@ -19,16 +33,23 @@ function resolveApiBaseUrl() {
   });
   const host = detectedHost || fallbackHost;
 
-  return `http://${host}:5000/api`;
+  return `http://${host}:5000/api/drip`;
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
 
 async function request(path, options = {}) {
+  const url = `${API_BASE_URL}${path}`;
+  const method = options.method ?? 'GET';
   let response;
 
   try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
+    console.log(`[API] ${method} ${url}`, {
+      body: options.body ?? null,
+      headers: options.headers ?? null,
+    });
+
+    response = await fetch(url, {
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
@@ -41,14 +62,22 @@ async function request(path, options = {}) {
       error instanceof Error && error.message
         ? error.message
         : 'Tidak bisa terhubung ke server.';
+    console.error(`[API] Network error for ${method} ${url}`, error);
     throw new Error(`Koneksi ke ${API_BASE_URL} gagal. ${message}`);
   }
 
   const isJson = response.headers.get('content-type')?.includes('application/json');
   const data = isJson ? await response.json() : null;
 
+  console.log(`[API] Response ${method} ${url}`, {
+    data,
+    ok: response.ok,
+    status: response.status,
+    statusText: response.statusText,
+  });
+
   if (!response.ok) {
-    throw new Error(data?.message ?? `Permintaan ke ${API_BASE_URL}${path} gagal.`);
+    throw new Error(data?.message ?? `Permintaan ke ${url} gagal.`);
   }
 
   return data;
@@ -56,6 +85,28 @@ async function request(path, options = {}) {
 
 export function fetchFarmSummary() {
   return request('/farm-summary');
+}
+
+export function fetchDripHealth() {
+  return request('/health');
+}
+
+export function fetchIotReadings(limit) {
+  const searchParams = new URLSearchParams();
+
+  if (typeof limit === 'number' && Number.isFinite(limit)) {
+    searchParams.set('limit', String(limit));
+  }
+
+  const query = searchParams.toString();
+  return request(query ? `/iot/readings?${query}` : '/iot/readings');
+}
+
+export function createIotReading(payload) {
+  return request('/iot/readings', {
+    body: JSON.stringify(payload),
+    method: 'POST',
+  });
 }
 
 export function fetchSchedules() {
