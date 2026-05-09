@@ -6,6 +6,7 @@ import Header from '@/src/components/Header';
 import QuickActionButton from '@/src/components/QuickActionButton';
 import OverallStatusCard from '@/src/components/StatCard';
 import ZoneCard from '@/src/components/ZoneCard';
+import { useIotAutoRefresh } from '@/src/hooks/useIotAutoRefresh';
 import { API_BASE_URL, fetchFarmSummary } from '@/src/services/api';
 import { globalStyles } from '@/src/styles/globalStyles';
 
@@ -37,6 +38,7 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const primaryZone = summary?.zones?.[0] ?? null;
 
   const loadSummary = useCallback(async (mode: 'initial' | 'refresh' | 'poll' = 'initial') => {
     try {
@@ -61,13 +63,11 @@ export default function HomeScreen() {
     loadSummary();
   }, [loadSummary]);
 
-  useEffect(() => {
-    const intervalId = setInterval(() => {
+  useIotAutoRefresh(
+    useCallback(() => {
       loadSummary('poll');
-    }, 20000);
-
-    return () => clearInterval(intervalId);
-  }, [loadSummary]);
+    }, [loadSummary]),
+  );
 
   const showAction = (message: string) => {
     Alert.alert('Aksi cepat', message);
@@ -146,20 +146,24 @@ export default function HomeScreen() {
 
             <View style={styles.section}>
               <View style={styles.zoneList}>
-                {summary.zones.map((zone) => (
+                {primaryZone ? (
                   <ZoneCard
-                    airHumidity={zone.airHumidity}
-                    fieldName={zone.crop}
-                    initialValveOn={zone.initialValveOn}
+                    airHumidity={primaryZone.airHumidity}
+                    fieldName={primaryZone.crop}
+                    initialValveOn={primaryZone.initialValveOn}
                     isExpanded
-                    key={zone.id}
-                    lightIntensity={zone.lightIntensity}
-                    soilMoisture={zone.moisture}
-                    temperature={zone.temperature}
-                    trendData={zone.trendData}
-                    zoneName={zone.name}
+                    key={primaryZone.id}
+                    lightIntensity={primaryZone.lightIntensity}
+                    soilMoisture={primaryZone.moisture}
+                    temperature={primaryZone.temperature}
+                    trendData={primaryZone.trendData}
+                    zoneName={primaryZone.name}
                   />
-                ))}
+                ) : (
+                  <View style={styles.stateBox}>
+                    <Text style={styles.stateText}>Zona utama belum tersedia.</Text>
+                  </View>
+                )}
               </View>
             </View>
           </>

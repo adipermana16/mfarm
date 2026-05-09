@@ -7,7 +7,7 @@ export default function AppSplashScreen() {
       <View style={styles.logoBadge}>
         <MaterialCommunityIcons name="leaf" size={60} color="#ffffff" />
       </View>
-      <Text style={styles.title}>Irigasi SmartDrip</Text>
+      <Text style={styles.title}>MFarm</Text>
       <Text style={styles.subtitle}>Sistem irigasi cerdas untuk kebun yang lebih sehat</Text>
     </View>
   );

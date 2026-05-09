@@ -1,7 +1,7 @@
 import Slider from '@react-native-community/slider';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -69,7 +69,7 @@ function DropdownField({ label, value, options, onChange }) {
 export default function AddScheduleScreen() {
   const router = useRouter();
   const [scheduleName, setScheduleName] = useState('Siram Pagi');
-  const [zones, setZones] = useState([]);
+  const [zone, setZone] = useState(null);
   const [selectedZone, setSelectedZone] = useState('');
   const [selectedDays, setSelectedDays] = useState(['mon', 'wed', 'fri']);
   const [startTime, setStartTime] = useState('06:00');
@@ -91,16 +91,24 @@ export default function AddScheduleScreen() {
           return;
         }
 
-        const nextZones = summary.zones.map((zone) => ({
-          label: `${zone.name} - ${zone.crop}`,
-          value: zone.id,
-        }));
+        const primaryZone = summary.zones?.[0];
+        if (!primaryZone) {
+          setZone(null);
+          setSelectedZone('');
+          setErrorMessage('Zona kebun belum tersedia dari backend.');
+          return;
+        }
 
-        setZones(nextZones);
-        setSelectedZone((currentZone) => currentZone || nextZones[0]?.value || '');
+        const nextZone = {
+          label: `${primaryZone.name} - ${primaryZone.crop}`,
+          value: primaryZone.id,
+        };
+
+        setZone(nextZone);
+        setSelectedZone(nextZone.value);
       } catch {
         if (isMounted) {
-          setErrorMessage('Daftar zona belum bisa dimuat dari backend.');
+          setErrorMessage('Zona kebun belum bisa dimuat dari backend.');
         }
       } finally {
         if (isMounted) {
@@ -115,11 +123,6 @@ export default function AddScheduleScreen() {
       isMounted = false;
     };
   }, []);
-
-  const selectedZoneLabel = useMemo(
-    () => zones.find((zone) => zone.value === selectedZone)?.label,
-    [selectedZone, zones],
-  );
 
   const toggleDay = (dayValue) => {
     setSelectedDays((currentDays) =>
@@ -201,17 +204,19 @@ export default function AddScheduleScreen() {
             {isLoadingZones ? (
               <View style={styles.inlineLoading}>
                 <ActivityIndicator color={globalStyles.colors.primaryGreen} />
-                <Text style={styles.inlineLoadingText}>Memuat zona kebun...</Text>
+                <Text style={styles.inlineLoadingText}>Memuat zona utama...</Text>
               </View>
-            ) : zones.length > 0 ? (
-              <DropdownField label="" onChange={setSelectedZone} options={zones} value={selectedZone} />
+            ) : zone ? (
+              <View style={styles.singleZoneBox}>
+                <Text style={styles.singleZoneText}>{zone.label}</Text>
+              </View>
             ) : (
               <View style={styles.errorBox}>
-                <Text style={styles.errorText}>Belum ada zona yang tersedia.</Text>
+                <Text style={styles.errorText}>Zona utama belum tersedia.</Text>
               </View>
             )}
-            {!isLoadingZones && selectedZoneLabel ? (
-              <Text style={styles.helperText}>Terhubung ke backend: {selectedZoneLabel}</Text>
+            {!isLoadingZones && zone ? (
+              <Text style={styles.helperText}>Zona ini dipakai otomatis untuk jadwal baru.</Text>
             ) : null}
           </View>
 
@@ -512,6 +517,20 @@ const styles = StyleSheet.create({
     color: '#5b655f',
     fontSize: 12,
     fontWeight: '600',
+  },
+  singleZoneBox: {
+    backgroundColor: '#f8faf6',
+    borderColor: '#dce5d8',
+    borderRadius: 8,
+    borderWidth: 1,
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+  },
+  singleZoneText: {
+    color: '#111111',
+    fontSize: 15,
+    fontWeight: '500',
   },
   inlineLoading: {
     alignItems: 'center',

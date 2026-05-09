@@ -14,7 +14,7 @@ export default function Header({ isOnline = true }) {
           <MaterialCommunityIcons name="leaf" size={25} color="#ffffff" />
         </View>
         <View style={styles.brandTextWrap}>
-          <Text style={styles.appName}>Irigasi SmartDrip</Text>
+          <Text style={styles.appName}>MFarm</Text>
         </View>
       </View>
 

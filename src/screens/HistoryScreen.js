@@ -1,18 +1,21 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { fetchHistory } from '@/src/services/api';
+import { useIotAutoRefresh } from '@/src/hooks/useIotAutoRefresh';
+import { fetchIotReadings } from '@/src/services/api';
 import { globalStyles } from '@/src/styles/globalStyles';
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
 const YEAR_OPTIONS = Array.from({ length: 5 }, (_, index) => new Date().getFullYear() - 2 + index);
 const initialHistory = {
   chartData: [],
-  lastCycle: null,
+  exportRows: [],
+  latestReading: null,
   pastEvents: [],
   selectedMonth: null,
 };
@@ -21,13 +24,198 @@ function Card({ children, style }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
+function normalizeReadings(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.readings)) {
+    return payload.readings;
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data;
+  }
+
+  return [];
+}
+
+function getReadingTimestamp(reading) {
+  return (
+    reading?.timestamp ??
+    reading?.recordedAt ??
+    reading?.createdAt ??
+    reading?.updatedAt ??
+    null
+  );
+}
+
+function getNumericValue(reading, keys) {
+  for (const key of keys) {
+    const value = reading?.[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return null;
+}
+
+function formatDate(date) {
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+}
+
+function formatTime(date) {
+  return new Intl.DateTimeFormat('id-ID', {
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+
+function buildHistoryFromReadings(readings, selectedMonth) {
+  const filteredEntries = readings
+    .map((reading, index) => {
+      const timestamp = getReadingTimestamp(reading);
+      const date = timestamp ? new Date(timestamp) : null;
+
+      if (!date || Number.isNaN(date.getTime())) {
+        return null;
+      }
+
+      return {
+        airHumidity: getNumericValue(reading, ['airHumidity', 'air_humidity', 'humidity']),
+        date,
+        id: reading.id ?? reading._id ?? `${timestamp}-${index}`,
+        lightIntensity: getNumericValue(reading, ['lightIntensity', 'light_intensity', 'lux']),
+        moisture: getNumericValue(reading, ['soilMoisture', 'soil_moisture', 'moisture']),
+        pump: getNumericValue(reading, ['pump', 'pumpValue', 'pump_value']),
+        pumpStatus:
+          reading?.pumpStatus ??
+          reading?.pump_status ??
+          reading?.pumpState ??
+          reading?.pump_state ??
+          null,
+        raw: reading,
+        temperature: getNumericValue(reading, ['temperature', 'temp']),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.date.getTime() - left.date.getTime());
+
+  const monthEntries = filteredEntries.filter(
+    (entry) =>
+      entry.date.getMonth() + 1 === selectedMonth.month &&
+      entry.date.getFullYear() === selectedMonth.year,
+  );
+
+  const entriesForChart = monthEntries.slice().sort((left, right) => left.date.getTime() - right.date.getTime());
+  const groupedByDay = new Map();
+
+  entriesForChart.forEach((entry) => {
+    const day = entry.date.getDate();
+    const currentGroup = groupedByDay.get(day) ?? { total: 0, count: 0 };
+    if (typeof entry.moisture === 'number') {
+      currentGroup.total += entry.moisture;
+      currentGroup.count += 1;
+    }
+    groupedByDay.set(day, currentGroup);
+  });
+
+  const chartData = Array.from(groupedByDay.entries())
+    .map(([day, group]) => ({
+      day: String(day).padStart(2, '0'),
+      value: group.count > 0 ? Math.round(group.total / group.count) : 0,
+    }))
+    .slice(-7);
+
+   const pastEvents = monthEntries.slice(0, 3).map((entry) => {
+    const airHumidityText = typeof entry.airHumidity === 'number' ? `${Math.round(entry.airHumidity)}%` : '-';
+    const moistureText = typeof entry.moisture === 'number' ? `${Math.round(entry.moisture)}%` : '-';
+    const pumpText = (() => {
+      if (entry.pumpStatus != null) {
+        const status = String(entry.pumpStatus).toLowerCase();
+        if (status === 'on' || status === 'true' || status === '1') {
+          return '1';
+        }
+        if (status === 'off' || status === 'false' || status === '0') {
+          return '0';
+        }
+        return String(entry.pumpStatus);
+      }
+      if (typeof entry.pump === 'number') {
+        return entry.pump > 0 ? '1' : '0';
+      }
+      return '-';
+    })();
+    const temperatureText = typeof entry.temperature === 'number' ? `${Math.round(entry.temperature)} C` : '-';
+    const lightText = typeof entry.lightIntensity === 'number' ? `${Math.round(entry.lightIntensity)} lux` : '-';
+    return {
+      airHumidity: airHumidityText,
+      date: formatDate(entry.date),
+      id: entry.id,
+      moisture: moistureText,
+      pump: pumpText,
+      temperature: temperatureText,
+      time: formatTime(entry.date),
+      water: lightText,
+    };
+  });
+
+  const exportRows = monthEntries.map((entry) => ({
+    kelembapanUdara: entry.airHumidity != null ? Math.round(entry.airHumidity) : '',
+    cahayaLux: entry.lightIntensity != null ? Math.round(entry.lightIntensity) : '',
+    kelembapanTanah: entry.moisture != null ? Math.round(entry.moisture) : '',
+    pump: (() => {
+      if (entry.pumpStatus != null) {
+        const status = String(entry.pumpStatus).toLowerCase();
+        if (status === 'on' || status === 'true' || status === '1') {
+          return '1';
+        }
+        if (status === 'off' || status === 'false' || status === '0') {
+          return '0';
+        }
+        return String(entry.pumpStatus);
+      }
+      if (typeof entry.pump === 'number') {
+        return entry.pump > 0 ? '1' : '0';
+      }
+      return '';
+    })(),
+    pumpStatus: entry.pumpStatus ?? '',
+    suhu: entry.temperature != null ? Math.round(entry.temperature) : '',
+    tanggal: formatDate(entry.date),
+    waktu: formatTime(entry.date),
+    timestamp: entry.date.toISOString(),
+  }));
+
+  return {
+    chartData,
+    exportRows,
+    latestReading: filteredEntries[0] ?? null,
+    pastEvents,
+    selectedMonth: {
+      label: `${MONTH_LABELS[selectedMonth.month - 1]} ${selectedMonth.year}`,
+    },
+  };
+}
+
 function HistoricalChart({ chartData, selectedMonthLabel, onOpenMonthPicker }) {
-  const maxValue = Math.max(...chartData.map((item) => item.value), 400);
+  const maxValue = Math.max(...chartData.map((item) => item.value), 100);
 
   return (
     <Card>
       <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>Data Historis Siklus Penyiraman</Text>
+        <Text style={styles.cardTitle}>Historis Kelembapan Tanah</Text>
         <Pressable onPress={onOpenMonthPicker} style={({ pressed }) => [styles.monthFilter, pressed && styles.monthFilterPressed]}>
           <Text style={styles.monthLabel}>{selectedMonthLabel}</Text>
           <MaterialCommunityIcons name="chevron-down" size={18} color="#111111" />
@@ -36,7 +224,7 @@ function HistoricalChart({ chartData, selectedMonthLabel, onOpenMonthPicker }) {
 
       <View style={styles.chartArea}>
         <View style={styles.yAxis}>
-          {[400, 300, 200, 100, 0].map((label) => (
+          {[100, 75, 50, 25, 0].map((label) => (
             <Text key={label} style={styles.axisLabel}>{label}</Text>
           ))}
         </View>
@@ -45,12 +233,18 @@ function HistoricalChart({ chartData, selectedMonthLabel, onOpenMonthPicker }) {
             <View key={line} style={[styles.gridLine, { top: line * 26 }]} />
           ))}
           <View style={styles.barRow}>
-            {chartData.map((item) => (
-              <View key={item.day} style={styles.barSlot}>
-                <View style={[styles.bar, { height: Math.max(8, (item.value / maxValue) * 104) }]} />
-                <Text style={styles.dayLabel}>{item.day}</Text>
+            {chartData.length > 0 ? (
+              chartData.map((item) => (
+                <View key={item.day} style={styles.barSlot}>
+                  <View style={[styles.bar, { height: Math.max(8, (item.value / maxValue) * 104) }]} />
+                  <Text style={styles.dayLabel}>{item.day}</Text>
+                </View>
+              ))
+            ) : (
+              <View style={styles.emptyChartWrap}>
+                <Text style={styles.emptyChartText}>Belum ada data IoT pada bulan ini.</Text>
               </View>
-            ))}
+            )}
           </View>
         </View>
       </View>
@@ -61,14 +255,21 @@ function HistoricalChart({ chartData, selectedMonthLabel, onOpenMonthPicker }) {
 function PastEvents({ pastEvents }) {
   return (
     <Card style={styles.eventsCard}>
-      <Text style={styles.cardTitle}>Riwayat Kejadian</Text>
+      <Text style={styles.cardTitle}>Riwayat Pembacaan IoT</Text>
       <View style={styles.eventsList}>
-        {pastEvents.map((event) => (
-          <View key={event.id} style={styles.eventRow}>
-            <Text style={styles.eventText}>{event.date}: {event.time}, {event.zone}, {event.duration}</Text>
-            <Text style={styles.eventWater}>{event.water}</Text>
-          </View>
-        ))}
+        {pastEvents.length > 0 ? (
+          pastEvents.map((event) => (
+            <View key={event.id} style={styles.eventRow}>
+              <Text style={styles.eventText}>{event.date}: {event.time}, Tanah {event.moisture}, Udara {event.airHumidity}, Suhu {event.temperature}</Text>
+              <View style={styles.eventMetaWrap}>
+                <Text style={styles.eventWater}>{event.water}</Text>
+                <Text style={styles.eventPump}>Pump {event.pump}</Text>
+              </View>
+            </View>
+          ))
+        ) : (
+          <Text style={styles.emptyEventsText}>Belum ada riwayat pembacaan IoT untuk periode ini.</Text>
+        )}
       </View>
     </Card>
   );
@@ -97,18 +298,20 @@ export default function HistoryScreen() {
 
     isRequestingRef.current = true;
 
-    try {
-      if (mode === 'refresh') {
-        setIsRefreshing(true);
-      } else if (mode === 'initial') {
-        setIsLoading(true);
-      }
-      setErrorMessage(null);
-      const data = await fetchHistory(selectedMonth);
-      setHistory(data);
-    } catch {
-      setErrorMessage('Riwayat belum bisa dimuat.');
-    } finally {
+try {
+       if (mode === 'refresh') {
+         setIsRefreshing(true);
+       } else if (mode === 'initial') {
+         setIsLoading(true);
+       }
+       setErrorMessage(null);
+       const payload = await fetchIotReadings();
+       const readings = normalizeReadings(payload);
+       const nextHistory = buildHistoryFromReadings(readings, selectedMonth);
+       setHistory(nextHistory);
+     } catch {
+       setErrorMessage('Riwayat data IoT belum bisa dimuat.');
+     } finally {
       isRequestingRef.current = false;
       setIsLoading(false);
       setIsRefreshing(false);
@@ -122,21 +325,12 @@ export default function HistoryScreen() {
   useFocusEffect(
     useCallback(() => {
       loadHistory('poll');
+    }, [loadHistory]),
+  );
 
-      const intervalId = setInterval(() => {
-        loadHistory('poll');
-      }, 5000);
-
-      const appStateSubscription = AppState.addEventListener('change', (nextAppState) => {
-        if (nextAppState === 'active') {
-          loadHistory('poll');
-        }
-      });
-
-      return () => {
-        clearInterval(intervalId);
-        appStateSubscription.remove();
-      };
+  useIotAutoRefresh(
+    useCallback(() => {
+      loadHistory('poll');
     }, [loadHistory]),
   );
 
@@ -158,6 +352,62 @@ export default function HistoryScreen() {
     setIsMonthPickerVisible(false);
   }, []);
 
+  const handleDownloadData = useCallback(async () => {
+    if (history.exportRows.length === 0) {
+      Alert.alert('Data belum tersedia', 'Belum ada data IoT pada periode ini untuk diunduh.');
+      return;
+    }
+
+    const fileName = `riwayat-iot-${selectedMonth.year}-${String(selectedMonth.month).padStart(2, '0')}.csv`;
+    const csvHeader = ['timestamp', 'tanggal', 'waktu', 'kelembapan_tanah', 'kelembapan_udara', 'suhu', 'cahaya_lux', 'pump', 'pump_status'];
+    const csvRows = history.exportRows.map((row) =>
+      [
+        row.timestamp,
+        row.tanggal,
+        row.waktu,
+        row.kelembapanTanah,
+        row.kelembapanUdara,
+        row.suhu,
+        row.cahayaLux,
+        row.pump,
+        row.pumpStatus,
+      ]
+        .map((value) => `"${String(value ?? '').replace(/"/g, '""')}"`)
+        .join(','),
+    );
+    const csvContent = [csvHeader.join(','), ...csvRows].join('\n');
+
+    try {
+      if (Platform.OS === 'android') {
+        const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+
+        if (!permissions.granted) {
+          Alert.alert('Unduhan dibatalkan', 'Folder penyimpanan belum dipilih.');
+          return;
+        }
+
+        const directoryUri = permissions.directoryUri;
+        const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(directoryUri, fileName.replace(/\.csv$/i, ''), 'text/csv');
+        await FileSystem.StorageAccessFramework.writeAsStringAsync(fileUri, csvContent);
+
+        Alert.alert('Unduhan berhasil', `File CSV disimpan ke folder yang dipilih dengan nama ${fileName}.`);
+        return;
+      }
+
+      const baseDirectory = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+      if (!baseDirectory) {
+        throw new Error('Direktori penyimpanan tidak tersedia.');
+      }
+
+      const fileUri = `${baseDirectory}${fileName}`;
+      await FileSystem.writeAsStringAsync(fileUri, csvContent);
+      Alert.alert('Unduhan berhasil', `File CSV disimpan di:\n${fileUri}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'File CSV belum bisa dibuat.';
+      Alert.alert('Unduhan gagal', message);
+    }
+  }, [history.exportRows, selectedMonth.month, selectedMonth.year]);
+
   const selectedMonthLabel = history.selectedMonth?.label ?? `${MONTH_LABELS[selectedMonth.month - 1]} ${selectedMonth.year}`;
 
   return (
@@ -165,6 +415,10 @@ export default function HistoryScreen() {
       <View style={styles.topBar}>
         <MaterialCommunityIcons name="arrow-left" size={24} color="#ffffff" onPress={() => router.back()} />
         <Text style={styles.topTitle}>Riwayat</Text>
+        <Pressable onPress={handleDownloadData} style={({ pressed }) => [styles.downloadButton, pressed && styles.downloadButtonPressed]}>
+          <MaterialCommunityIcons name="download" size={18} color="#ffffff" />
+          <Text style={styles.downloadButtonText}>Unduh</Text>
+        </Pressable>
       </View>
 
       <ScrollView
@@ -174,7 +428,7 @@ export default function HistoryScreen() {
         {isLoading ? (
           <View style={styles.stateBox}>
             <ActivityIndicator color="#3c6255" />
-            <Text style={styles.stateText}>Memuat riwayat...</Text>
+            <Text style={styles.stateText}>Memuat riwayat data IoT...</Text>
           </View>
         ) : null}
 
@@ -184,11 +438,26 @@ export default function HistoryScreen() {
           </View>
         ) : null}
 
-        {history.lastCycle ? (
+        {history.latestReading ? (
           <Card>
-            <Text style={styles.lastCycleTitle}>Siklus Terakhir: <Text style={styles.boldText}>{history.lastCycle.date}</Text></Text>
-            <Text style={styles.lastCycleText}>{history.lastCycle.zone}</Text>
-            <Text style={styles.lastCycleText}>{history.lastCycle.duration}, {history.lastCycle.water}</Text>
+            <Text style={styles.lastCycleTitle}>Pembacaan Terakhir: <Text style={styles.boldText}>{formatDate(history.latestReading.date)}</Text></Text>
+            <Text style={styles.lastCycleText}>Pukul {formatTime(history.latestReading.date)}</Text>
+            <Text style={styles.lastCycleText}>
+              Kelembapan Tanah {history.latestReading.moisture != null ? `${Math.round(history.latestReading.moisture)}%` : '-'},
+              {' '}Suhu {history.latestReading.temperature != null ? `${Math.round(history.latestReading.temperature)} C` : '-'}
+            </Text>
+            <Text style={styles.lastCycleText}>
+              Kelembapan Udara {history.latestReading.airHumidity != null ? `${Math.round(history.latestReading.airHumidity)}%` : '-'},
+              {' '}Pump {history.latestReading.pumpStatus != null ? (() => {
+                const status = String(history.latestReading.pumpStatus).toLowerCase();
+                if (status === 'on' || status === 'true' || status === '1') return '1';
+                if (status === 'off' || status === 'false' || status === '0') return '0';
+                return String(history.latestReading.pumpStatus);
+              })() : history.latestReading.pump != null ? (history.latestReading.pump > 0 ? '1' : '0') : '-'}
+            </Text>
+            <Text style={styles.lastCycleText}>
+              Cahaya {history.latestReading.lightIntensity != null ? `${Math.round(history.latestReading.lightIntensity)} lux` : '-'}
+            </Text>
           </Card>
         ) : null}
 
@@ -277,6 +546,24 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '500',
+  },
+  downloadButton: {
+    alignItems: 'center',
+    borderColor: 'rgba(255,255,255,0.35)',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  downloadButtonPressed: {
+    opacity: 0.82,
+  },
+  downloadButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '700',
   },
   content: {
     gap: 10,
@@ -424,6 +711,34 @@ const styles = StyleSheet.create({
     color: '#111111',
     fontSize: 14,
     textAlign: 'right',
+  },
+  eventMetaWrap: {
+    alignItems: 'flex-end',
+    gap: 2,
+    justifyContent: 'center',
+  },
+  eventPump: {
+    color: '#5b655f',
+    fontSize: 12,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+  emptyChartWrap: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+  },
+  emptyChartText: {
+    color: '#5b655f',
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  emptyEventsText: {
+    color: '#5b655f',
+    fontSize: 13,
+    fontWeight: '600',
+    paddingVertical: 8,
   },
   modalOverlay: {
     alignItems: 'center',

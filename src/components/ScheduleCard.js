@@ -48,10 +48,10 @@ export default function ScheduleCard({ schedule, onToggleChange }) {
 
       <View style={styles.divider} />
 
-      <View style={styles.footerRow}>
-        <MaterialCommunityIcons name="clock-outline" size={18} color="#333333" />
-        <Text style={styles.daysText}>{schedule.duration}</Text>
-      </View>
+<View style={styles.footerRow}>
+          <MaterialCommunityIcons name="clock-outline" size={18} color="#333333" />
+          <Text style={styles.daysText}>{schedule.duration} Menit</Text>
+        </View>
     </View>
   );
 }

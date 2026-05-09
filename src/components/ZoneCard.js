@@ -1,7 +1,7 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import { StyleSheet, Switch, Text, View } from 'react-native';
-import Svg, { Defs, LinearGradient, Path, Polygon, Polyline, Stop } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Polygon, Polyline, Stop } from 'react-native-svg';
 
 import { dataStyles, getSwitchColors, globalStyles } from '@/src/styles/globalStyles';
 
@@ -72,9 +72,10 @@ export default function ZoneCard({
   isExpanded = true,
 }) {
   const [isValveOn, setIsValveOn] = useState(initialValveOn);
+  const [isManualMode, setIsManualMode] = useState(false);
   const gaugePath = useMemo(() => buildArcPath(soilMoisture), [soilMoisture]);
   const trendPoints = useMemo(() => buildTrendPoints(trendData), [trendData]);
-  const switchColors = getSwitchColors(isValveOn);
+  const switchColors = getSwitchColors(isValveOn && isManualMode);
 
   return (
     <View style={styles.card}>
@@ -101,40 +102,79 @@ export default function ZoneCard({
 
       <View style={styles.bodyRow}>
         <View style={[styles.gaugeWrap, dataStyles.gaugeContainer]}>
-          <Svg width={132} height={76} viewBox="0 0 116 72">
-            <Path d="M 10 58 A 48 48 0 1 1 106 58" fill="none" stroke="#E2E2E2" strokeWidth={20} />
-            <Path d={gaugePath} fill="none" stroke={globalStyles.colors.primaryGreen} strokeWidth={20} />
-            <Path d="M 58 58 L 72 15" stroke="#111111" strokeLinecap="round" strokeWidth={3} />
-          </Svg>
+         <View style={[styles.metricIconBox, { backgroundColor: '#CCE5FF' }]}>
+              <MaterialCommunityIcons name="sprout" size={24} color="#8B5A2B" />
+            </View>
           <Text style={[styles.gaugeValue, dataStyles.gaugeText]}>{soilMoisture}%</Text>
           <Text style={styles.gaugeLabel}>Kelembapan Tanah</Text>
         </View>
 
-        <View style={styles.sensorPanel}>
-          <View style={styles.sensorRow}>
-            <Text style={styles.sensorLabel}>Suhu</Text>
-            <Text style={styles.sensorValue}>{temperature} C</Text>
-          </View>
-          <View style={styles.sensorRow}>
-            <Text style={styles.sensorLabel}>Kelembapan</Text>
-            <Text style={styles.sensorValue}>{airHumidity}%</Text>
-          </View>
-          <View style={styles.sensorRow}>
-            <Text style={styles.sensorLabel}>Intensitas Cahaya</Text>
-            <Text style={styles.sensorValue}>{lightIntensity ?? 0} lux</Text>
-          </View>
-          <View style={styles.switchRow}>
-            <View>
-              <Text style={styles.switchLabel}>Katup</Text>
-              <Text style={[styles.valveTextOn, styles.openText]}>{isValveOn ? 'BUKA' : 'MATI'}</Text>
+        <View style={styles.sensorGrid}>
+          <View style={styles.metricCard}>
+            <View style={[styles.metricIconBox, { backgroundColor: '#FFE5CC' }]}>
+              <MaterialCommunityIcons name="thermometer" size={24} color="#C2410C" />
             </View>
-            <Switch
-              onValueChange={setIsValveOn}
-              thumbColor={switchColors.thumbColor}
-              trackColor={switchColors.trackColor}
-              value={isValveOn}
-            />
+            <Text style={styles.metricLabel}>Suhu</Text>
+            <Text style={styles.metricValue}>{temperature}°C</Text>
           </View>
+
+          <View style={styles.metricCard}>
+            <View style={[styles.metricIconBox, { backgroundColor: '#CCE5FF' }]}>
+              <MaterialCommunityIcons name="water-percent" size={24} color="#2563EB" />
+            </View>
+            <Text style={styles.metricLabel}>Kelembapan Udara</Text>
+            <Text style={styles.metricValue}>{airHumidity}%</Text>
+          </View>
+
+          <View style={styles.metricCard}>
+            <View style={[styles.metricIconBox, { backgroundColor: '#FFE5B4' }]}>
+              <MaterialCommunityIcons name="white-balance-sunny" size={24} color="#0bf51f" />
+            </View>
+            <Text style={styles.metricLabel}>Cahaya</Text>
+            <Text style={styles.metricValue}>{lightIntensity ?? 0}</Text>
+            <Text style={styles.metricUnit}>lux</Text>
+          </View>
+
+          <View style={styles.metricCard}>
+            <View style={[styles.metricIconBox, { backgroundColor: isManualMode ? (isValveOn ? '#E8F5E9' : '#F1F5F9') : '#E8E8FF' }]}>
+              <MaterialCommunityIcons name="valve" size={24} color={isManualMode ? (isValveOn ? globalStyles.colors.primaryGreen : '#64748B') : '#6366F1'} />
+            </View>
+            <Text style={styles.metricLabel}>Mode</Text>
+            <View style={styles.modeToggleContainer}>
+              <Text style={[styles.modeButton, !isManualMode && styles.modeButtonActive]}>
+                Otomatis
+              </Text>
+              <Switch
+                onValueChange={setIsManualMode}
+                thumbColor={isManualMode ? '#3c6255' : '#CBD5E1'}
+                trackColor={{ false: '#E2E8F0', true: '#D1FAE5' }}
+                value={isManualMode}
+                style={styles.modeSwitch}
+              />
+              <Text style={[styles.modeButton, isManualMode && styles.modeButtonActive]}>
+                Manual
+              </Text>
+            </View>
+          </View>
+
+          {isManualMode && (
+            <View style={styles.metricCard}>
+              <View style={[styles.metricIconBox, { backgroundColor: isValveOn ? '#E8F5E9' : '#F1F5F9' }]}>
+                <MaterialCommunityIcons name={isValveOn ? 'pipe-valve' : 'pipe-valve-closed'} size={24} color={isValveOn ? globalStyles.colors.primaryGreen : '#64748B'} />
+              </View>
+              <Text style={styles.metricLabel}>Katup</Text>
+              <Text style={[styles.metricValue, { color: isValveOn ? globalStyles.colors.primaryGreen : '#64748B' }]}>
+                {isValveOn ? 'BUKA' : 'MATI'}
+              </Text>
+              <Switch
+                onValueChange={setIsValveOn}
+                thumbColor={switchColors.thumbColor}
+                trackColor={switchColors.trackColor}
+                value={isValveOn}
+                style={styles.metricSwitch}
+              />
+            </View>
+          )}
         </View>
       </View>
 
@@ -223,16 +263,19 @@ const styles = StyleSheet.create({
     color: '#64748b',
   },
   bodyRow: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: 10,
   },
   gaugeWrap: {
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    flex: 1,
+    width: '100%',
     justifyContent: 'center',
     minHeight: 116,
     padding: 0,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
   gaugeValue: {
     color: '#111111',
@@ -247,6 +290,69 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     marginTop: 2,
     textAlign: 'center',
+  },
+  sensorGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    justifyContent: 'space-between',
+  },
+  metricCard: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    flex: 1,
+    gap: 6,
+    minWidth: '48%',
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  metricIconBox: {
+    alignItems: 'center',
+    borderRadius: 8,
+    height: 48,
+    justifyContent: 'center',
+    width: 48,
+  },
+  metricLabel: {
+    color: '#64748B',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  metricValue: {
+    color: '#111111',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  metricUnit: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '400',
+  },
+  metricSwitch: {
+    marginTop: 4,
+  },
+  modeToggleContainer: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  modeButton: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '500',
+  },
+  modeButtonActive: {
+    color: '#111111',
+    fontWeight: '700',
+  },
+  modeSwitch: {
+    marginVertical: 0,
+    marginHorizontal: -2,
   },
   sensorPanel: {
     flex: 1,

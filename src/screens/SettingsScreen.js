@@ -86,7 +86,6 @@ function AccountHeader({ onOpenProfile }) {
 export default function SettingsScreen() {
   const router = useRouter();
   const { darkMode, setDarkMode, theme } = useAppPreferences();
-  const [leakAlerts, setLeakAlerts] = useState(true);
   const [soilMoisture, setSoilMoisture] = useState(true);
   const [systemStatus, setSystemStatus] = useState(false);
   const [autoSync, setAutoSync] = useState(true);
@@ -133,14 +132,6 @@ export default function SettingsScreen() {
         </CardSection>
 
         <CardSection title="Notifikasi" theme={theme}>
-          <ToggleRow
-            icon="pipe-leak"
-            onValueChange={setLeakAlerts}
-            subtitle="Kirim peringatan saat ada indikasi bocor"
-            theme={theme}
-            title="Peringatan Kebocoran"
-            value={leakAlerts}
-          />
           <ToggleRow
             icon="water-percent"
             onValueChange={setSoilMoisture}
