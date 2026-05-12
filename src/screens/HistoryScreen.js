@@ -46,25 +46,99 @@ function getReadingTimestamp(reading) {
     reading?.recordedAt ??
     reading?.createdAt ??
     reading?.updatedAt ??
+    reading?.time ??
+    reading?.date ??
+    reading?.created_at ??
+    reading?.updated_at ??
     null
   );
 }
 
-function getNumericValue(reading, keys) {
+function findValueByKeys(object, keys, visited = new WeakSet()) {
+  if (object == null || typeof object !== 'object') {
+    return null;
+  }
+
+  if (visited.has(object)) {
+    return null;
+  }
+
+  visited.add(object);
+
   for (const key of keys) {
-    const value = reading?.[key];
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return value;
+    if (Object.prototype.hasOwnProperty.call(object, key)) {
+      return object[key];
     }
-    if (typeof value === 'string') {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed)) {
-        return parsed;
+  }
+
+  for (const value of Object.values(object)) {
+    if (typeof value === 'object' && value !== null) {
+      const nested = findValueByKeys(value, keys, visited);
+      if (nested != null) {
+        return nested;
       }
     }
   }
 
   return null;
+}
+
+const PUMP_KEYS = [
+  'pump',
+  'pumpValue',
+  'pump_value',
+  'pumpStatus',
+  'pump_status',
+  'pumpState',
+  'pump_state',
+  'pumpOn',
+  'pumpOff',
+  'state',
+  'status',
+  'value',
+  'val',
+];
+
+function normalizeValue(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 1 : 0;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'on' || normalized === 'true') {
+      return 1;
+    }
+    if (normalized === 'off' || normalized === 'false') {
+      return 0;
+    }
+    const parsed = Number(normalized);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  if (typeof value === 'object' && value !== null) {
+    const nested = findValueByKeys(value, PUMP_KEYS);
+    if (nested != null) {
+      return normalizeValue(nested);
+    }
+  }
+
+  return null;
+}
+
+function getNumericValue(reading, keys) {
+  const value = findValueByKeys(reading, keys);
+  return normalizeValue(value);
+}
+
+function getPumpValue(reading) {
+  return getNumericValue(reading, PUMP_KEYS);
 }
 
 function formatDate(date) {
@@ -98,13 +172,8 @@ function buildHistoryFromReadings(readings, selectedMonth) {
         id: reading.id ?? reading._id ?? `${timestamp}-${index}`,
         lightIntensity: getNumericValue(reading, ['lightIntensity', 'light_intensity', 'lux']),
         moisture: getNumericValue(reading, ['soilMoisture', 'soil_moisture', 'moisture']),
-        pump: getNumericValue(reading, ['pump', 'pumpValue', 'pump_value']),
-        pumpStatus:
-          reading?.pumpStatus ??
-          reading?.pump_status ??
-          reading?.pumpState ??
-          reading?.pump_state ??
-          null,
+        pump: getPumpValue(reading),
+        pumpStatus: getPumpValue(reading),
         raw: reading,
         temperature: getNumericValue(reading, ['temperature', 'temp']),
       };
@@ -142,6 +211,9 @@ function buildHistoryFromReadings(readings, selectedMonth) {
     const airHumidityText = typeof entry.airHumidity === 'number' ? `${Math.round(entry.airHumidity)}%` : '-';
     const moistureText = typeof entry.moisture === 'number' ? `${Math.round(entry.moisture)}%` : '-';
     const pumpText = (() => {
+      if (typeof entry.pump === 'number') {
+        return entry.pump > 0 ? '1' : '0';
+      }
       if (entry.pumpStatus != null) {
         const status = String(entry.pumpStatus).toLowerCase();
         if (status === 'on' || status === 'true' || status === '1') {
@@ -151,9 +223,6 @@ function buildHistoryFromReadings(readings, selectedMonth) {
           return '0';
         }
         return String(entry.pumpStatus);
-      }
-      if (typeof entry.pump === 'number') {
-        return entry.pump > 0 ? '1' : '0';
       }
       return '-';
     })();
@@ -448,12 +517,12 @@ try {
             </Text>
             <Text style={styles.lastCycleText}>
               Kelembapan Udara {history.latestReading.airHumidity != null ? `${Math.round(history.latestReading.airHumidity)}%` : '-'},
-              {' '}Pump {history.latestReading.pumpStatus != null ? (() => {
+              {' '}Pump {history.latestReading.pump != null ? String(history.latestReading.pump) : history.latestReading.pumpStatus != null ? (() => {
                 const status = String(history.latestReading.pumpStatus).toLowerCase();
                 if (status === 'on' || status === 'true' || status === '1') return '1';
                 if (status === 'off' || status === 'false' || status === '0') return '0';
                 return String(history.latestReading.pumpStatus);
-              })() : history.latestReading.pump != null ? (history.latestReading.pump > 0 ? '1' : '0') : '-'}
+              })() : '-'}
             </Text>
             <Text style={styles.lastCycleText}>
               Cahaya {history.latestReading.lightIntensity != null ? `${Math.round(history.latestReading.lightIntensity)} lux` : '-'}
