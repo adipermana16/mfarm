@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -7,7 +7,11 @@ import { useAppPreferences } from '@/src/context/AppPreferencesContext';
 import { globalStyles } from '@/src/styles/globalStyles';
 
 export default function TabLayout() {
-  const { darkMode, theme } = useAppPreferences();
+  const { darkMode, isAuthenticated, theme } = useAppPreferences();
+
+  if (!isAuthenticated) {
+    return <Redirect href="/" />;
+  }
 
   return (
     <Tabs

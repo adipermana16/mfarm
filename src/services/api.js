@@ -37,6 +37,9 @@ function resolveApiBaseUrl() {
 }
 
 export const API_BASE_URL = resolveApiBaseUrl();
+const OTP_TTL_MS = 5 * 60 * 1000;
+const registrationDatabase = [];
+const pendingOtpStore = new Map();
 
 async function request(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
@@ -151,4 +154,133 @@ export function saveProfile(profile) {
     body: JSON.stringify(profile),
     method: 'PUT',
   });
+}
+
+function buildMaskedDestination(email, phone) {
+  if (email) {
+    const [namePart, domainPart] = email.split('@');
+    const safeName = namePart.length <= 2 ? `${namePart[0] || ''}*` : `${namePart.slice(0, 2)}***`;
+    return `${safeName}@${domainPart}`;
+  }
+
+  if (phone) {
+    const digits = phone.replace(/\D/g, '');
+    const visible = digits.slice(-3);
+    return `+** *** *** ${visible}`;
+  }
+
+  return 'kontak pengguna';
+}
+
+function generateOtpCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function createMockRegistrationRequest(payload) {
+  const requestId = `otp-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const code = generateOtpCode();
+  const expiresAt = new Date(Date.now() + OTP_TTL_MS).toISOString();
+
+  pendingOtpStore.set(requestId, {
+    code,
+    expiresAt,
+    payload,
+  });
+
+  return {
+    expiresAt,
+    maskedDestination: buildMaskedDestination(payload.email, payload.phone),
+    requestId,
+  };
+}
+
+function validateOtpRequest(requestId, otp) {
+  const pendingRequest = pendingOtpStore.get(requestId);
+
+  if (!pendingRequest) {
+    throw new Error('Sesi OTP tidak ditemukan. Silakan kirim ulang kode verifikasi.');
+  }
+
+  if (new Date(pendingRequest.expiresAt).getTime() < Date.now()) {
+    pendingOtpStore.delete(requestId);
+    throw new Error('Kode OTP sudah kedaluwarsa. Silakan kirim ulang.');
+  }
+
+  if (pendingRequest.code !== otp) {
+    throw new Error('Kode OTP tidak valid. Periksa kembali 6 digit yang dimasukkan.');
+  }
+
+  return pendingRequest;
+}
+
+function toStoredUser(payload) {
+  return {
+    createdAt: new Date().toISOString(),
+    email: payload.email.trim(),
+    fullName: payload.fullName.trim(),
+    id: `usr-${Date.now()}`,
+    phone: payload.phone.trim(),
+  };
+}
+
+export async function requestRegistrationOtp(payload) {
+  try {
+    return await request('/auth/register/request-otp', {
+      body: JSON.stringify(payload),
+      method: 'POST',
+    });
+  } catch {
+    return createMockRegistrationRequest(payload);
+  }
+}
+
+export async function resendRegistrationOtp(requestId) {
+  try {
+    return await request('/auth/register/resend-otp', {
+      body: JSON.stringify({ requestId }),
+      method: 'POST',
+    });
+  } catch {
+    const existingRequest = pendingOtpStore.get(requestId);
+
+    if (!existingRequest) {
+      throw new Error('Sesi OTP tidak ditemukan. Kembali ke formulir registrasi.');
+    }
+
+    const nextCode = generateOtpCode();
+    const nextExpiry = new Date(Date.now() + OTP_TTL_MS).toISOString();
+
+    pendingOtpStore.set(requestId, {
+      ...existingRequest,
+      code: nextCode,
+      expiresAt: nextExpiry,
+    });
+
+    return {
+      expiresAt: nextExpiry,
+      maskedDestination: buildMaskedDestination(existingRequest.payload.email, existingRequest.payload.phone),
+      requestId,
+    };
+  }
+}
+
+export async function verifyRegistrationOtp(requestId, otp) {
+  try {
+    return await request('/auth/register/verify-otp', {
+      body: JSON.stringify({ otp, requestId }),
+      method: 'POST',
+    });
+  } catch {
+    const pendingRequest = validateOtpRequest(requestId, otp);
+    const storedUser = toStoredUser(pendingRequest.payload);
+
+    registrationDatabase.push(storedUser);
+    pendingOtpStore.delete(requestId);
+
+    return { user: storedUser };
+  }
+}
+
+export function getRegisteredUsers() {
+  return registrationDatabase;
 }

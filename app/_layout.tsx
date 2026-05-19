@@ -9,7 +9,7 @@ import AppSplashScreen from '@/src/components/AppSplashScreen';
 import { AppPreferencesProvider, useAppPreferences } from '@/src/context/AppPreferencesContext';
 
 export const unstable_settings = {
-  anchor: '(tabs)',
+  anchor: 'index',
 };
 
 void SplashScreen.preventAutoHideAsync();
@@ -43,9 +43,11 @@ function RootLayoutContent() {
   return (
     <ThemeProvider value={darkMode ? DarkTheme : DefaultTheme}>
       <Stack>
+        <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="add-schedule" options={{ headerShown: false }} />
         <Stack.Screen name="profile" options={{ headerShown: false }} />
+        <Stack.Screen name="register" options={{ headerShown: false }} />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Jendela' }} />
       </Stack>
       <StatusBar style={darkMode ? 'light' : 'dark'} />

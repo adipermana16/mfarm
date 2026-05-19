@@ -85,13 +85,29 @@ function AccountHeader({ onOpenProfile }) {
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { darkMode, setDarkMode, theme } = useAppPreferences();
+  const { darkMode, setDarkMode, signOut, theme } = useAppPreferences();
   const [soilMoisture, setSoilMoisture] = useState(true);
   const [systemStatus, setSystemStatus] = useState(false);
   const [autoSync, setAutoSync] = useState(true);
 
   const openDetail = (title) => {
     Alert.alert(title, 'Halaman detail pengaturan ini akan dibuka.');
+  };
+
+  const handleSignOut = () => {
+    Alert.alert('Keluar akun', 'Anda akan kembali ke halaman login.', [
+      {
+        style: 'cancel',
+        text: 'Batal',
+      },
+      {
+        onPress: () => {
+          signOut();
+          router.replace('/');
+        },
+        text: 'Keluar',
+      },
+    ]);
   };
 
   return (
@@ -110,6 +126,13 @@ export default function SettingsScreen() {
             subtitle="Lihat dan ubah data akun"
             theme={theme}
             title="Profil Saya"
+          />
+          <RowItem
+            icon="account-plus-outline"
+            onPress={() => router.push('/register')}
+            subtitle="Daftarkan pengguna baru tanpa OTP"
+            theme={theme}
+            title="Registrasi Akun"
           />
         </CardSection>
 
@@ -172,7 +195,7 @@ export default function SettingsScreen() {
           <RowItem
             danger
             icon="logout"
-            onPress={() => openDetail('Keluar Akun')}
+            onPress={handleSignOut}
             subtitle="Akhiri sesi dari perangkat ini"
             theme={theme}
             title="Keluar Akun"

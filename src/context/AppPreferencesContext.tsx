@@ -26,8 +26,12 @@ type AppTheme = {
 type AppPreferences = {
   darkMode: boolean;
   setDarkMode: (value: boolean) => void;
+  isAuthenticated: boolean;
+  signIn: (credentials: { email: string; password: string }) => { success: boolean; message?: string };
+  signOut: () => void;
   profile: UserProfile;
   updateProfile: (profile: UserProfile) => Promise<void>;
+  applyRegisteredAccount: (account: { fullName: string; email: string; phone: string }) => void;
   theme: AppTheme;
 };
 
@@ -67,6 +71,7 @@ const AppPreferencesContext = createContext<AppPreferences | null>(null);
 export function AppPreferencesProvider({ children }: PropsWithChildren) {
   const [darkMode, setDarkMode] = useState(false);
   const [profile, setProfile] = useState(initialProfile);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -94,15 +99,72 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
     setProfile(savedProfile);
   }, []);
 
+  const signIn = useCallback(
+    ({ email, password }: { email: string; password: string }) => {
+      const normalizedEmail = email.trim().toLowerCase();
+      const profileEmail = profile.email.trim().toLowerCase();
+
+      if (!normalizedEmail || !password.trim()) {
+        return {
+          message: 'Email dan password wajib diisi.',
+          success: false,
+        };
+      }
+
+      if (normalizedEmail !== profileEmail) {
+        return {
+          message: 'Email belum terdaftar di aplikasi.',
+          success: false,
+        };
+      }
+
+      if (password.trim().length < 8) {
+        return {
+          message: 'Password minimal 8 karakter.',
+          success: false,
+        };
+      }
+
+      setIsAuthenticated(true);
+      return { success: true };
+    },
+    [profile.email],
+  );
+
+  const signOut = useCallback(() => {
+    setIsAuthenticated(false);
+  }, []);
+
+  const applyRegisteredAccount = useCallback((account: { fullName: string; email: string; phone: string }) => {
+    const activeSince = new Intl.DateTimeFormat('id-ID', {
+      month: 'long',
+      year: 'numeric',
+    }).format(new Date());
+
+    setProfile((current) => ({
+      ...current,
+      activeSince,
+      email: account.email.trim(),
+      name: account.fullName.trim(),
+      phone: account.phone.trim(),
+      role: 'Petani Terdaftar',
+    }));
+    setIsAuthenticated(true);
+  }, []);
+
   const value = useMemo(
     () => ({
       darkMode,
       setDarkMode,
+      isAuthenticated,
+      signIn,
+      signOut,
       profile,
       updateProfile,
+      applyRegisteredAccount,
       theme: darkMode ? darkTheme : lightTheme,
     }),
-    [darkMode, profile, updateProfile],
+    [applyRegisteredAccount, darkMode, isAuthenticated, profile, signIn, signOut, updateProfile],
   );
 
   return <AppPreferencesContext.Provider value={value}>{children}</AppPreferencesContext.Provider>;
