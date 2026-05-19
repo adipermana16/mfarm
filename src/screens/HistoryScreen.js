@@ -12,9 +12,12 @@ import { globalStyles } from '@/src/styles/globalStyles';
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
 const YEAR_OPTIONS = Array.from({ length: 5 }, (_, index) => new Date().getFullYear() - 2 + index);
+const DOWNLOAD_STATE_FILE_NAME = 'history-download-state.json';
 const initialHistory = {
   chartData: [],
   exportRows: [],
+  hasDownloadedFilter: false,
+  lastDownloadedAt: null,
   latestReading: null,
   pastEvents: [],
   selectedMonth: null,
@@ -156,7 +159,47 @@ function formatTime(date) {
   }).format(date);
 }
 
-function buildHistoryFromReadings(readings, selectedMonth) {
+function getDownloadStateFileUri() {
+  const baseDirectory = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
+  return baseDirectory ? `${baseDirectory}${DOWNLOAD_STATE_FILE_NAME}` : null;
+}
+
+function getSelectedMonthKey(selectedMonth) {
+  return `${selectedMonth.year}-${String(selectedMonth.month).padStart(2, '0')}`;
+}
+
+async function readDownloadState() {
+  const fileUri = getDownloadStateFileUri();
+
+  if (!fileUri) {
+    return {};
+  }
+
+  try {
+    const fileInfo = await FileSystem.getInfoAsync(fileUri);
+    if (!fileInfo.exists) {
+      return {};
+    }
+
+    const content = await FileSystem.readAsStringAsync(fileUri);
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeDownloadState(nextState) {
+  const fileUri = getDownloadStateFileUri();
+
+  if (!fileUri) {
+    throw new Error('Direktori penyimpanan aplikasi tidak tersedia.');
+  }
+
+  await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(nextState));
+}
+
+function buildHistoryFromReadings(readings, selectedMonth, downloadedAfter = null) {
   const filteredEntries = readings
     .map((reading, index) => {
       const timestamp = getReadingTimestamp(reading);
@@ -186,8 +229,11 @@ function buildHistoryFromReadings(readings, selectedMonth) {
       entry.date.getMonth() + 1 === selectedMonth.month &&
       entry.date.getFullYear() === selectedMonth.year,
   );
+  const visibleMonthEntries = downloadedAfter != null
+    ? monthEntries.filter((entry) => entry.date.getTime() > downloadedAfter)
+    : monthEntries;
 
-  const entriesForChart = monthEntries.slice().sort((left, right) => left.date.getTime() - right.date.getTime());
+  const entriesForChart = visibleMonthEntries.slice().sort((left, right) => left.date.getTime() - right.date.getTime());
   const groupedByDay = new Map();
 
   entriesForChart.forEach((entry) => {
@@ -207,7 +253,7 @@ function buildHistoryFromReadings(readings, selectedMonth) {
     }))
     .slice(-7);
 
-   const pastEvents = monthEntries.slice(0, 3).map((entry) => {
+   const pastEvents = visibleMonthEntries.slice(0, 3).map((entry) => {
     const airHumidityText = typeof entry.airHumidity === 'number' ? `${Math.round(entry.airHumidity)}%` : '-';
     const moistureText = typeof entry.moisture === 'number' ? `${Math.round(entry.moisture)}%` : '-';
     const pumpText = (() => {
@@ -240,7 +286,7 @@ function buildHistoryFromReadings(readings, selectedMonth) {
     };
   });
 
-  const exportRows = monthEntries.map((entry) => ({
+  const exportRows = visibleMonthEntries.map((entry) => ({
     kelembapanUdara: entry.airHumidity != null ? Math.round(entry.airHumidity) : '',
     cahayaLux: entry.lightIntensity != null ? Math.round(entry.lightIntensity) : '',
     kelembapanTanah: entry.moisture != null ? Math.round(entry.moisture) : '',
@@ -270,6 +316,8 @@ function buildHistoryFromReadings(readings, selectedMonth) {
   return {
     chartData,
     exportRows,
+    hasDownloadedFilter: downloadedAfter != null,
+    lastDownloadedAt: downloadedAfter != null ? new Date(downloadedAfter) : null,
     latestReading: filteredEntries[0] ?? null,
     pastEvents,
     selectedMonth: {
@@ -367,20 +415,28 @@ export default function HistoryScreen() {
 
     isRequestingRef.current = true;
 
-try {
-       if (mode === 'refresh') {
-         setIsRefreshing(true);
-       } else if (mode === 'initial') {
-         setIsLoading(true);
-       }
-       setErrorMessage(null);
-       const payload = await fetchIotReadings();
-       const readings = normalizeReadings(payload);
-       const nextHistory = buildHistoryFromReadings(readings, selectedMonth);
-       setHistory(nextHistory);
-     } catch {
-       setErrorMessage('Riwayat data IoT belum bisa dimuat.');
-     } finally {
+    try {
+      if (mode === 'refresh') {
+        setIsRefreshing(true);
+      } else if (mode === 'initial') {
+        setIsLoading(true);
+      }
+      setErrorMessage(null);
+      const payload = await fetchIotReadings();
+      const readings = normalizeReadings(payload);
+      const downloadState = await readDownloadState();
+      const selectedMonthKey = getSelectedMonthKey(selectedMonth);
+      const downloadedAfterRaw = downloadState[selectedMonthKey];
+      const downloadedAfter = downloadedAfterRaw ? new Date(downloadedAfterRaw).getTime() : null;
+      const nextHistory = buildHistoryFromReadings(
+        readings,
+        selectedMonth,
+        Number.isFinite(downloadedAfter) ? downloadedAfter : null,
+      );
+      setHistory(nextHistory);
+    } catch {
+      setErrorMessage('Riwayat data IoT belum bisa dimuat.');
+    } finally {
       isRequestingRef.current = false;
       setIsLoading(false);
       setIsRefreshing(false);
@@ -459,7 +515,12 @@ try {
         const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(directoryUri, fileName.replace(/\.csv$/i, ''), 'text/csv');
         await FileSystem.StorageAccessFramework.writeAsStringAsync(fileUri, csvContent);
 
-        Alert.alert('Unduhan berhasil', `File CSV disimpan ke folder yang dipilih dengan nama ${fileName}.`);
+        const downloadState = await readDownloadState();
+        downloadState[getSelectedMonthKey(selectedMonth)] = history.exportRows[0]?.timestamp ?? new Date().toISOString();
+        await writeDownloadState(downloadState);
+        await loadHistory('poll');
+
+        Alert.alert('Unduhan berhasil', `File CSV disimpan ke folder yang dipilih dengan nama ${fileName}. Data bulan ini akan mulai lagi dari data baru.`);
         return;
       }
 
@@ -470,12 +531,43 @@ try {
 
       const fileUri = `${baseDirectory}${fileName}`;
       await FileSystem.writeAsStringAsync(fileUri, csvContent);
-      Alert.alert('Unduhan berhasil', `File CSV disimpan di:\n${fileUri}`);
+      const downloadState = await readDownloadState();
+      downloadState[getSelectedMonthKey(selectedMonth)] = history.exportRows[0]?.timestamp ?? new Date().toISOString();
+      await writeDownloadState(downloadState);
+      await loadHistory('poll');
+      Alert.alert('Unduhan berhasil', `File CSV disimpan di:\n${fileUri}\n\nData bulan ini akan mulai lagi dari data baru.`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'File CSV belum bisa dibuat.';
       Alert.alert('Unduhan gagal', message);
     }
-  }, [history.exportRows, selectedMonth.month, selectedMonth.year]);
+  }, [history.exportRows, loadHistory, selectedMonth]);
+
+  const handleResetDownloadedData = useCallback(() => {
+    Alert.alert(
+      'Hapus reset unduhan?',
+      `Data ${MONTH_LABELS[selectedMonth.month - 1]} ${selectedMonth.year} akan ditampilkan lagi dari awal.`,
+      [
+        {
+          style: 'cancel',
+          text: 'Batal',
+        },
+        {
+          text: 'Tampilkan Lagi',
+          onPress: async () => {
+            try {
+              const downloadState = await readDownloadState();
+              delete downloadState[getSelectedMonthKey(selectedMonth)];
+              await writeDownloadState(downloadState);
+              await loadHistory('poll');
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'Data belum bisa ditampilkan ulang.';
+              Alert.alert('Reset gagal', message);
+            }
+          },
+        },
+      ],
+    );
+  }, [loadHistory, selectedMonth]);
 
   const selectedMonthLabel = history.selectedMonth?.label ?? `${MONTH_LABELS[selectedMonth.month - 1]} ${selectedMonth.year}`;
 
@@ -535,6 +627,18 @@ try {
           onOpenMonthPicker={() => setIsMonthPickerVisible(true)}
           selectedMonthLabel={selectedMonthLabel}
         />
+        {history.hasDownloadedFilter ? (
+          <Card style={styles.downloadInfoCard}>
+            <Text style={styles.downloadInfoText}>
+              Data yang tampil saat ini hanya data baru setelah unduhan terakhir
+              {history.lastDownloadedAt ? ` pada ${formatDate(history.lastDownloadedAt)} ${formatTime(history.lastDownloadedAt)}` : ''}.
+            </Text>
+            <Pressable onPress={handleResetDownloadedData} style={({ pressed }) => [styles.resetButton, pressed && styles.resetButtonPressed]}>
+              <MaterialCommunityIcons name="delete" size={18} color="#8b1e1e" />
+              <Text style={styles.resetButtonText}>Hapus reset unduhan</Text>
+            </Pressable>
+          </Card>
+        ) : null}
         <PastEvents pastEvents={history.pastEvents} />
       </ScrollView>
 
@@ -634,10 +738,38 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  resetButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: '#fdeaea',
+    borderColor: '#efcaca',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  resetButtonPressed: {
+    opacity: 0.85,
+  },
+  resetButtonText: {
+    color: '#8b1e1e',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   content: {
     gap: 10,
     padding: 8,
     paddingBottom: 24,
+  },
+  downloadInfoCard: {
+    gap: 10,
+  },
+  downloadInfoText: {
+    color: '#5b655f',
+    fontSize: 13,
+    lineHeight: 20,
   },
   stateBox: {
     alignItems: 'center',
