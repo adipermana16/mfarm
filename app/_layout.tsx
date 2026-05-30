@@ -15,7 +15,7 @@ export const unstable_settings = {
 void SplashScreen.preventAutoHideAsync();
 
 function RootLayoutContent() {
-  const { darkMode } = useAppPreferences();
+  const { darkMode, isAuthenticated } = useAppPreferences();
   const [isBooting, setIsBooting] = useState(true);
 
   useEffect(() => {
@@ -44,10 +44,12 @@ function RootLayoutContent() {
     <ThemeProvider value={darkMode ? DarkTheme : DefaultTheme}>
       <Stack>
         <Stack.Screen name="index" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="add-schedule" options={{ headerShown: false }} />
-        <Stack.Screen name="profile" options={{ headerShown: false }} />
         <Stack.Screen name="register" options={{ headerShown: false }} />
+        <Stack.Protected guard={isAuthenticated}>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="add-schedule" options={{ headerShown: false }} />
+          <Stack.Screen name="profile" options={{ headerShown: false }} />
+        </Stack.Protected>
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Jendela' }} />
       </Stack>
       <StatusBar style={darkMode ? 'light' : 'dark'} />

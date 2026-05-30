@@ -27,6 +27,7 @@ type AppPreferences = {
   darkMode: boolean;
   setDarkMode: (value: boolean) => void;
   isAuthenticated: boolean;
+  isAdmin: boolean;
   signIn: (credentials: { email: string; password: string }) => { success: boolean; message?: string };
   signOut: () => void;
   profile: UserProfile;
@@ -43,6 +44,22 @@ const initialProfile: UserProfile = {
   phone: '+62 812 3456 7890',
   farmName: 'Kebun SmartDrip Lembang',
   farmArea: '2,4 hektare',
+  activeSince: 'April 2026',
+};
+
+const adminAccount = {
+  email: 'admin@mfarm.id',
+  password: 'admin12345',
+};
+
+const adminProfile: UserProfile = {
+  name: 'Admin MFarm',
+  role: 'Admin',
+  location: 'Bandung, Jawa Barat',
+  email: adminAccount.email,
+  phone: '+62 812 0000 0000',
+  farmName: 'MFarm SmartDrip',
+  farmArea: 'Semua lahan',
   activeSince: 'April 2026',
 };
 
@@ -67,6 +84,11 @@ const darkTheme: AppTheme = {
 };
 
 const AppPreferencesContext = createContext<AppPreferences | null>(null);
+
+export function isAdminRole(role: string) {
+  const normalizedRole = role.trim().toLowerCase();
+  return normalizedRole === 'admin' || normalizedRole === 'administrator';
+}
 
 export function AppPreferencesProvider({ children }: PropsWithChildren) {
   const [darkMode, setDarkMode] = useState(false);
@@ -102,13 +124,27 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   const signIn = useCallback(
     ({ email, password }: { email: string; password: string }) => {
       const normalizedEmail = email.trim().toLowerCase();
+      const normalizedPassword = password.trim();
       const profileEmail = profile.email.trim().toLowerCase();
 
-      if (!normalizedEmail || !password.trim()) {
+      if (!normalizedEmail || !normalizedPassword) {
         return {
           message: 'Email dan password wajib diisi.',
           success: false,
         };
+      }
+
+      if (normalizedEmail === adminAccount.email) {
+        if (normalizedPassword !== adminAccount.password) {
+          return {
+            message: 'Password admin tidak sesuai.',
+            success: false,
+          };
+        }
+
+        setProfile(adminProfile);
+        setIsAuthenticated(true);
+        return { success: true };
       }
 
       if (normalizedEmail !== profileEmail) {
@@ -118,7 +154,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         };
       }
 
-      if (password.trim().length < 8) {
+      if (normalizedPassword.length < 8) {
         return {
           message: 'Password minimal 8 karakter.',
           success: false,
@@ -157,6 +193,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
       darkMode,
       setDarkMode,
       isAuthenticated,
+      isAdmin: isAdminRole(profile.role),
       signIn,
       signOut,
       profile,

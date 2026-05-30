@@ -1,4 +1,4 @@
-import { Redirect, Tabs } from 'expo-router';
+import { Tabs } from 'expo-router';
 import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
@@ -7,11 +7,7 @@ import { useAppPreferences } from '@/src/context/AppPreferencesContext';
 import { globalStyles } from '@/src/styles/globalStyles';
 
 export default function TabLayout() {
-  const { darkMode, isAuthenticated, theme } = useAppPreferences();
-
-  if (!isAuthenticated) {
-    return <Redirect href="/" />;
-  }
+  const { darkMode, isAdmin, theme } = useAppPreferences();
 
   return (
     <Tabs
@@ -51,6 +47,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="schedules"
         options={{
+          href: isAdmin ? '/schedules' : null,
           title: 'Jadwal',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="calendar" color={color} />,
         }}

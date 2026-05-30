@@ -108,6 +108,9 @@ export default function LoginScreen() {
             <Text style={[styles.sectionSubtitle, { color: theme.mutedText }]}>
               Email aktif saat ini: {profile.email}
             </Text>
+            <Text style={[styles.sectionSubtitle, { color: theme.mutedText }]}>
+              Akun admin: admin@mfarm.id / admin12345
+            </Text>
 
             <LoginField
               icon="email-outline"

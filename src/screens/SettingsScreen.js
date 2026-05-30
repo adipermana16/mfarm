@@ -103,7 +103,6 @@ export default function SettingsScreen() {
       {
         onPress: () => {
           signOut();
-          router.replace('/');
         },
         text: 'Keluar',
       },
