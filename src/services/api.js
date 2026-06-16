@@ -133,6 +133,10 @@ export function updateScheduleStatus(scheduleId, isEnabled) {
 export function fetchHistory(params = {}) {
   const searchParams = new URLSearchParams();
 
+  if (params.day) {
+    searchParams.set('day', String(params.day));
+  }
+
   if (params.month) {
     searchParams.set('month', String(params.month));
   }

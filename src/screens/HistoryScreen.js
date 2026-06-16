@@ -7,11 +7,12 @@ import { ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, S
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useIotAutoRefresh } from '@/src/hooks/useIotAutoRefresh';
-import { fetchIotReadings } from '@/src/services/api';
+import { fetchHistory, fetchIotReadings } from '@/src/services/api';
+import { mergeIotReadings, readCachedIotReadings, saveIotReadingsToCache } from '@/src/services/iotHistoryCache';
 import { globalStyles } from '@/src/styles/globalStyles';
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
-const YEAR_OPTIONS = Array.from({ length: 5 }, (_, index) => new Date().getFullYear() - 2 + index);
+const YEAR_WINDOW = 5;
 const DOWNLOAD_STATE_FILE_NAME = 'history-download-state.json';
 const initialHistory = {
   chartData: [],
@@ -20,7 +21,17 @@ const initialHistory = {
   lastDownloadedAt: null,
   latestReading: null,
   pastEvents: [],
-  selectedMonth: null,
+  selectedDate: null,
+};
+const initialDateOptions = {
+  dates: [],
+  days: [],
+  months: [],
+  years: [],
+};
+const HISTORY_MODES = {
+  ALL: 'all',
+  DATE: 'date',
 };
 
 function Card({ children, style }) {
@@ -36,11 +47,45 @@ function normalizeReadings(payload) {
     return payload.readings;
   }
 
+  if (Array.isArray(payload?.history)) {
+    return payload.history;
+  }
+
+  if (Array.isArray(payload?.items)) {
+    return payload.items;
+  }
+
+  if (Array.isArray(payload?.results)) {
+    return payload.results;
+  }
+
   if (Array.isArray(payload?.data)) {
     return payload.data;
   }
 
   return [];
+}
+
+async function fetchAllHistoryReadings() {
+  const cachedReadings = await readCachedIotReadings();
+  const [iotReadingsResult, historyResult] = await Promise.allSettled([
+    fetchIotReadings(),
+    fetchHistory(),
+  ]);
+
+  const iotReadings = iotReadingsResult.status === 'fulfilled'
+    ? normalizeReadings(iotReadingsResult.value)
+    : [];
+  const historyReadings = historyResult.status === 'fulfilled'
+    ? normalizeReadings(historyResult.value)
+    : [];
+
+  if (iotReadingsResult.status === 'rejected' && historyResult.status === 'rejected' && cachedReadings.length === 0) {
+    throw iotReadingsResult.reason ?? historyResult.reason;
+  }
+
+  const mergedReadings = mergeIotReadings(cachedReadings, historyReadings, iotReadings);
+  return saveIotReadingsToCache(mergedReadings);
 }
 
 function getReadingTimestamp(reading) {
@@ -164,8 +209,98 @@ function getDownloadStateFileUri() {
   return baseDirectory ? `${baseDirectory}${DOWNLOAD_STATE_FILE_NAME}` : null;
 }
 
-function getSelectedMonthKey(selectedMonth) {
-  return `${selectedMonth.year}-${String(selectedMonth.month).padStart(2, '0')}`;
+function getSelectedDateKey(selectedDate) {
+  return [
+    selectedDate.year,
+    String(selectedDate.month).padStart(2, '0'),
+    String(selectedDate.day).padStart(2, '0'),
+  ].join('-');
+}
+
+function getDateLabel(selectedDate) {
+  return `${String(selectedDate.day).padStart(2, '0')} ${MONTH_LABELS[selectedDate.month - 1]} ${selectedDate.year}`;
+}
+
+function isSameSelectedDate(date, selectedDate) {
+  return (
+    date.getDate() === selectedDate.day &&
+    date.getMonth() + 1 === selectedDate.month &&
+    date.getFullYear() === selectedDate.year
+  );
+}
+
+function buildReadingEntries(readings) {
+  return readings
+    .map((reading, index) => {
+      const timestamp = getReadingTimestamp(reading);
+      const date = timestamp ? new Date(timestamp) : null;
+
+      if (!date || Number.isNaN(date.getTime())) {
+        return null;
+      }
+
+      return {
+        airHumidity: getNumericValue(reading, ['airHumidity', 'air_humidity', 'humidity']),
+        date,
+        id: reading.id ?? reading._id ?? `${timestamp}-${index}`,
+        lightIntensity: getNumericValue(reading, ['lightIntensity', 'light_intensity', 'lux']),
+        moisture: getNumericValue(reading, ['soilMoisture', 'soil_moisture', 'moisture']),
+        pump: getPumpValue(reading),
+        pumpStatus: getPumpValue(reading),
+        raw: reading,
+        temperature: getNumericValue(reading, ['temperature', 'temp']),
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => right.date.getTime() - left.date.getTime());
+}
+
+function buildDateOptions(entries, selectedDate) {
+  const dates = entries.map((entry) => ({
+    day: entry.date.getDate(),
+    key: getSelectedDateKey({
+      day: entry.date.getDate(),
+      month: entry.date.getMonth() + 1,
+      year: entry.date.getFullYear(),
+    }),
+    month: entry.date.getMonth() + 1,
+    year: entry.date.getFullYear(),
+  }));
+  const uniqueDates = Array.from(new Map(dates.map((date) => [date.key, date])).values())
+    .sort((left, right) => right.key.localeCompare(left.key));
+  return buildDateOptionsFromDates(uniqueDates, selectedDate);
+}
+
+function buildDateOptionsFromDates(uniqueDates, selectedDate) {
+  const currentYear = new Date().getFullYear();
+  const rangeYears = Array.from({ length: YEAR_WINDOW * 2 + 1 }, (_, index) => currentYear - YEAR_WINDOW + index);
+  const years = Array.from(
+    new Set([
+      ...rangeYears,
+      ...uniqueDates.map((date) => date.year),
+      selectedDate.year,
+    ]),
+  ).sort((left, right) => right - left);
+  const months = Array.from({ length: 12 }, (_, index) => index + 1);
+  const days = Array.from({ length: getDaysInMonth(selectedDate.year, selectedDate.month) }, (_, index) => index + 1);
+
+  return {
+    dates: uniqueDates,
+    days,
+    months,
+    years,
+  };
+}
+
+function getDaysInMonth(year, month) {
+  return new Date(year, month, 0).getDate();
+}
+
+function clampSelectedDate(selectedDate) {
+  return {
+    ...selectedDate,
+    day: Math.min(selectedDate.day, getDaysInMonth(selectedDate.year, selectedDate.month)),
+  };
 }
 
 async function readDownloadState() {
@@ -199,61 +334,31 @@ async function writeDownloadState(nextState) {
   await FileSystem.writeAsStringAsync(fileUri, JSON.stringify(nextState));
 }
 
-function buildHistoryFromReadings(readings, selectedMonth, downloadedAfter = null) {
-  const filteredEntries = readings
-    .map((reading, index) => {
-      const timestamp = getReadingTimestamp(reading);
-      const date = timestamp ? new Date(timestamp) : null;
+function buildHistoryFromEntries(filteredEntries, selectedDate, historyMode = HISTORY_MODES.ALL) {
+  const dateEntries = filteredEntries.filter((entry) => isSameSelectedDate(entry.date, selectedDate));
+  const visibleDateEntries = historyMode === HISTORY_MODES.ALL ? filteredEntries : dateEntries;
 
-      if (!date || Number.isNaN(date.getTime())) {
-        return null;
-      }
-
-      return {
-        airHumidity: getNumericValue(reading, ['airHumidity', 'air_humidity', 'humidity']),
-        date,
-        id: reading.id ?? reading._id ?? `${timestamp}-${index}`,
-        lightIntensity: getNumericValue(reading, ['lightIntensity', 'light_intensity', 'lux']),
-        moisture: getNumericValue(reading, ['soilMoisture', 'soil_moisture', 'moisture']),
-        pump: getPumpValue(reading),
-        pumpStatus: getPumpValue(reading),
-        raw: reading,
-        temperature: getNumericValue(reading, ['temperature', 'temp']),
-      };
-    })
-    .filter(Boolean)
-    .sort((left, right) => right.date.getTime() - left.date.getTime());
-
-  const monthEntries = filteredEntries.filter(
-    (entry) =>
-      entry.date.getMonth() + 1 === selectedMonth.month &&
-      entry.date.getFullYear() === selectedMonth.year,
-  );
-  const visibleMonthEntries = downloadedAfter != null
-    ? monthEntries.filter((entry) => entry.date.getTime() > downloadedAfter)
-    : monthEntries;
-
-  const entriesForChart = visibleMonthEntries.slice().sort((left, right) => left.date.getTime() - right.date.getTime());
-  const groupedByDay = new Map();
+  const entriesForChart = visibleDateEntries.slice().sort((left, right) => left.date.getTime() - right.date.getTime());
+  const groupedEntries = new Map();
 
   entriesForChart.forEach((entry) => {
-    const day = entry.date.getDate();
-    const currentGroup = groupedByDay.get(day) ?? { total: 0, count: 0 };
+    const key = historyMode === HISTORY_MODES.ALL ? formatDate(entry.date) : formatTime(entry.date);
+    const currentGroup = groupedEntries.get(key) ?? { total: 0, count: 0 };
     if (typeof entry.moisture === 'number') {
       currentGroup.total += entry.moisture;
       currentGroup.count += 1;
     }
-    groupedByDay.set(day, currentGroup);
+    groupedEntries.set(key, currentGroup);
   });
 
-  const chartData = Array.from(groupedByDay.entries())
-    .map(([day, group]) => ({
-      day: String(day).padStart(2, '0'),
+  const chartData = Array.from(groupedEntries.entries())
+    .map(([label, group]) => ({
+      day: label,
       value: group.count > 0 ? Math.round(group.total / group.count) : 0,
     }))
     .slice(-7);
 
-   const pastEvents = visibleMonthEntries.slice(0, 3).map((entry) => {
+  const pastEvents = visibleDateEntries.map((entry) => {
     const airHumidityText = typeof entry.airHumidity === 'number' ? `${Math.round(entry.airHumidity)}%` : '-';
     const moistureText = typeof entry.moisture === 'number' ? `${Math.round(entry.moisture)}%` : '-';
     const pumpText = (() => {
@@ -286,7 +391,7 @@ function buildHistoryFromReadings(readings, selectedMonth, downloadedAfter = nul
     };
   });
 
-  const exportRows = visibleMonthEntries.map((entry) => ({
+  const exportRows = visibleDateEntries.map((entry) => ({
     kelembapanUdara: entry.airHumidity != null ? Math.round(entry.airHumidity) : '',
     cahayaLux: entry.lightIntensity != null ? Math.round(entry.lightIntensity) : '',
     kelembapanTanah: entry.moisture != null ? Math.round(entry.moisture) : '',
@@ -316,25 +421,25 @@ function buildHistoryFromReadings(readings, selectedMonth, downloadedAfter = nul
   return {
     chartData,
     exportRows,
-    hasDownloadedFilter: downloadedAfter != null,
-    lastDownloadedAt: downloadedAfter != null ? new Date(downloadedAfter) : null,
+    hasDownloadedFilter: false,
+    lastDownloadedAt: null,
     latestReading: filteredEntries[0] ?? null,
     pastEvents,
-    selectedMonth: {
-      label: `${MONTH_LABELS[selectedMonth.month - 1]} ${selectedMonth.year}`,
+    selectedDate: {
+      label: getDateLabel(selectedDate),
     },
   };
 }
 
-function HistoricalChart({ chartData, selectedMonthLabel, onOpenMonthPicker }) {
+function HistoricalChart({ chartData, selectedDateLabel, onOpenDatePicker }) {
   const maxValue = Math.max(...chartData.map((item) => item.value), 100);
 
   return (
     <Card>
       <View style={styles.cardHeader}>
         <Text style={styles.cardTitle}>Historis Kelembapan Tanah</Text>
-        <Pressable onPress={onOpenMonthPicker} style={({ pressed }) => [styles.monthFilter, pressed && styles.monthFilterPressed]}>
-          <Text style={styles.monthLabel}>{selectedMonthLabel}</Text>
+        <Pressable onPress={onOpenDatePicker} style={({ pressed }) => [styles.monthFilter, pressed && styles.monthFilterPressed]}>
+          <Text style={styles.monthLabel}>{selectedDateLabel}</Text>
           <MaterialCommunityIcons name="chevron-down" size={18} color="#111111" />
         </Pressable>
       </View>
@@ -359,7 +464,7 @@ function HistoricalChart({ chartData, selectedMonthLabel, onOpenMonthPicker }) {
               ))
             ) : (
               <View style={styles.emptyChartWrap}>
-                <Text style={styles.emptyChartText}>Belum ada data IoT pada bulan ini.</Text>
+                <Text style={styles.emptyChartText}>Belum ada data IoT.</Text>
               </View>
             )}
           </View>
@@ -400,9 +505,12 @@ export default function HistoryScreen() {
   const [errorMessage, setErrorMessage] = useState(null);
   const isRequestingRef = useRef(false);
   const [isMonthPickerVisible, setIsMonthPickerVisible] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(() => {
+  const [availableDateOptions, setAvailableDateOptions] = useState(initialDateOptions);
+  const [historyMode, setHistoryMode] = useState(HISTORY_MODES.ALL);
+  const [selectedDate, setSelectedDate] = useState(() => {
     const now = new Date();
     return {
+      day: now.getDate(),
       month: now.getMonth() + 1,
       year: now.getFullYear(),
     };
@@ -422,16 +530,18 @@ export default function HistoryScreen() {
         setIsLoading(true);
       }
       setErrorMessage(null);
-      const payload = await fetchIotReadings();
-      const readings = normalizeReadings(payload);
-      const downloadState = await readDownloadState();
-      const selectedMonthKey = getSelectedMonthKey(selectedMonth);
-      const downloadedAfterRaw = downloadState[selectedMonthKey];
-      const downloadedAfter = downloadedAfterRaw ? new Date(downloadedAfterRaw).getTime() : null;
-      const nextHistory = buildHistoryFromReadings(
-        readings,
-        selectedMonth,
-        Number.isFinite(downloadedAfter) ? downloadedAfter : null,
+      const readings = await fetchAllHistoryReadings();
+      const entries = buildReadingEntries(readings);
+      const nextSelectedDate = clampSelectedDate(selectedDate);
+      const nextDateOptions = buildDateOptions(entries, nextSelectedDate);
+      setAvailableDateOptions(nextDateOptions);
+      if (getSelectedDateKey(nextSelectedDate) !== getSelectedDateKey(selectedDate)) {
+        setSelectedDate(nextSelectedDate);
+      }
+      const nextHistory = buildHistoryFromEntries(
+        entries,
+        nextSelectedDate,
+        historyMode,
       );
       setHistory(nextHistory);
     } catch {
@@ -441,7 +551,7 @@ export default function HistoryScreen() {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [selectedMonth]);
+  }, [historyMode, selectedDate]);
 
   useEffect(() => {
     loadHistory();
@@ -459,22 +569,34 @@ export default function HistoryScreen() {
     }, [loadHistory]),
   );
 
+  const handleSelectDay = useCallback((day) => {
+    setSelectedDate((current) => ({
+      ...current,
+      day,
+    }));
+  }, []);
+
   const handleSelectMonth = useCallback((month) => {
-    setSelectedMonth((current) => ({
+    setSelectedDate((current) => clampSelectedDate({
       ...current,
       month,
     }));
   }, []);
 
   const handleSelectYear = useCallback((year) => {
-    setSelectedMonth((current) => ({
+    setSelectedDate((current) => clampSelectedDate({
       ...current,
       year,
     }));
   }, []);
 
   const applyMonthFilter = useCallback(() => {
+    setHistoryMode(HISTORY_MODES.DATE);
     setIsMonthPickerVisible(false);
+  }, []);
+
+  const showAllHistory = useCallback(() => {
+    setHistoryMode(HISTORY_MODES.ALL);
   }, []);
 
   const handleDownloadData = useCallback(async () => {
@@ -483,7 +605,9 @@ export default function HistoryScreen() {
       return;
     }
 
-    const fileName = `riwayat-iot-${selectedMonth.year}-${String(selectedMonth.month).padStart(2, '0')}.csv`;
+    const fileName = historyMode === HISTORY_MODES.ALL
+      ? 'riwayat-iot-semua.csv'
+      : `riwayat-iot-${getSelectedDateKey(selectedDate)}.csv`;
     const csvHeader = ['timestamp', 'tanggal', 'waktu', 'kelembapan_tanah', 'kelembapan_udara', 'suhu', 'cahaya_lux', 'pump', 'pump_status'];
     const csvRows = history.exportRows.map((row) =>
       [
@@ -515,12 +639,7 @@ export default function HistoryScreen() {
         const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(directoryUri, fileName.replace(/\.csv$/i, ''), 'text/csv');
         await FileSystem.StorageAccessFramework.writeAsStringAsync(fileUri, csvContent);
 
-        const downloadState = await readDownloadState();
-        downloadState[getSelectedMonthKey(selectedMonth)] = history.exportRows[0]?.timestamp ?? new Date().toISOString();
-        await writeDownloadState(downloadState);
-        await loadHistory('poll');
-
-        Alert.alert('Unduhan berhasil', `File CSV disimpan ke folder yang dipilih dengan nama ${fileName}. Data bulan ini akan mulai lagi dari data baru.`);
+        Alert.alert('Unduhan berhasil', `File CSV disimpan ke folder yang dipilih dengan nama ${fileName}.`);
         return;
       }
 
@@ -531,21 +650,17 @@ export default function HistoryScreen() {
 
       const fileUri = `${baseDirectory}${fileName}`;
       await FileSystem.writeAsStringAsync(fileUri, csvContent);
-      const downloadState = await readDownloadState();
-      downloadState[getSelectedMonthKey(selectedMonth)] = history.exportRows[0]?.timestamp ?? new Date().toISOString();
-      await writeDownloadState(downloadState);
-      await loadHistory('poll');
-      Alert.alert('Unduhan berhasil', `File CSV disimpan di:\n${fileUri}\n\nData bulan ini akan mulai lagi dari data baru.`);
+      Alert.alert('Unduhan berhasil', `File CSV disimpan di:\n${fileUri}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'File CSV belum bisa dibuat.';
       Alert.alert('Unduhan gagal', message);
     }
-  }, [history.exportRows, loadHistory, selectedMonth]);
+  }, [history.exportRows, historyMode, selectedDate]);
 
   const handleResetDownloadedData = useCallback(() => {
     Alert.alert(
       'Hapus reset unduhan?',
-      `Data ${MONTH_LABELS[selectedMonth.month - 1]} ${selectedMonth.year} akan ditampilkan lagi dari awal.`,
+      `Data ${getDateLabel(selectedDate)} akan ditampilkan lagi dari awal.`,
       [
         {
           style: 'cancel',
@@ -556,7 +671,7 @@ export default function HistoryScreen() {
           onPress: async () => {
             try {
               const downloadState = await readDownloadState();
-              delete downloadState[getSelectedMonthKey(selectedMonth)];
+              delete downloadState[getSelectedDateKey(selectedDate)];
               await writeDownloadState(downloadState);
               await loadHistory('poll');
             } catch (error) {
@@ -567,9 +682,12 @@ export default function HistoryScreen() {
         },
       ],
     );
-  }, [loadHistory, selectedMonth]);
+  }, [loadHistory, selectedDate]);
 
-  const selectedMonthLabel = history.selectedMonth?.label ?? `${MONTH_LABELS[selectedMonth.month - 1]} ${selectedMonth.year}`;
+  const selectedDateLabel = historyMode === HISTORY_MODES.ALL
+    ? 'Semua Data'
+    : history.selectedDate?.label ?? getDateLabel(selectedDate);
+  const currentDateOptions = buildDateOptionsFromDates(availableDateOptions.dates, selectedDate);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -622,10 +740,35 @@ export default function HistoryScreen() {
           </Card>
         ) : null}
 
+        <View style={styles.historyModeRow}>
+          <Pressable
+            onPress={showAllHistory}
+            style={({ pressed }) => [
+              styles.historyModeButton,
+              historyMode === HISTORY_MODES.ALL && styles.historyModeButtonActive,
+              pressed && styles.monthOptionPressed,
+            ]}>
+            <Text style={[styles.historyModeText, historyMode === HISTORY_MODES.ALL && styles.historyModeTextActive]}>
+              Semua
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setIsMonthPickerVisible(true)}
+            style={({ pressed }) => [
+              styles.historyModeButton,
+              historyMode === HISTORY_MODES.DATE && styles.historyModeButtonActive,
+              pressed && styles.monthOptionPressed,
+            ]}>
+            <Text style={[styles.historyModeText, historyMode === HISTORY_MODES.DATE && styles.historyModeTextActive]}>
+              {getDateLabel(selectedDate)}
+            </Text>
+          </Pressable>
+        </View>
+
         <HistoricalChart
           chartData={history.chartData}
-          onOpenMonthPicker={() => setIsMonthPickerVisible(true)}
-          selectedMonthLabel={selectedMonthLabel}
+          onOpenDatePicker={() => setIsMonthPickerVisible(true)}
+          selectedDateLabel={selectedDateLabel}
         />
         {history.hasDownloadedFilter ? (
           <Card style={styles.downloadInfoCard}>
@@ -649,10 +792,23 @@ export default function HistoryScreen() {
         onRequestClose={() => setIsMonthPickerVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setIsMonthPickerVisible(false)}>
           <Pressable style={styles.monthModalCard} onPress={() => null}>
-            <Text style={styles.monthModalTitle}>Pilih Bulan dan Tahun</Text>
+            <Text style={styles.monthModalTitle}>Pilih Hari, Bulan, dan Tahun</Text>
+            <View style={styles.yearStepper}>
+              <Pressable
+                onPress={() => handleSelectYear(selectedDate.year - 1)}
+                style={({ pressed }) => [styles.yearStepButton, pressed && styles.monthOptionPressed]}>
+                <MaterialCommunityIcons name="chevron-left" size={20} color="#111111" />
+              </Pressable>
+              <Text style={styles.yearStepperText}>{selectedDate.year}</Text>
+              <Pressable
+                onPress={() => handleSelectYear(selectedDate.year + 1)}
+                style={({ pressed }) => [styles.yearStepButton, pressed && styles.monthOptionPressed]}>
+                <MaterialCommunityIcons name="chevron-right" size={20} color="#111111" />
+              </Pressable>
+            </View>
             <View style={styles.yearOptions}>
-              {YEAR_OPTIONS.map((year) => {
-                const isActive = selectedMonth.year === year;
+              {currentDateOptions.years.map((year) => {
+                const isActive = selectedDate.year === year;
 
                 return (
                   <Pressable
@@ -671,13 +827,12 @@ export default function HistoryScreen() {
               })}
             </View>
             <View style={styles.monthOptions}>
-              {MONTH_LABELS.map((label, index) => {
-                const monthNumber = index + 1;
-                const isActive = selectedMonth.month === monthNumber;
+              {currentDateOptions.months.map((monthNumber) => {
+                const isActive = selectedDate.month === monthNumber;
 
                 return (
                   <Pressable
-                    key={label}
+                    key={monthNumber}
                     onPress={() => handleSelectMonth(monthNumber)}
                     style={({ pressed }) => [
                       styles.monthOption,
@@ -685,7 +840,27 @@ export default function HistoryScreen() {
                       pressed && styles.monthOptionPressed,
                     ]}>
                     <Text style={[styles.monthOptionText, isActive && styles.monthOptionTextActive]}>
-                      {label}
+                      {MONTH_LABELS[monthNumber - 1]}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={styles.dayOptions}>
+              {currentDateOptions.days.map((day) => {
+                const isActive = selectedDate.day === day;
+
+                return (
+                  <Pressable
+                    key={day}
+                    onPress={() => handleSelectDay(day)}
+                    style={({ pressed }) => [
+                      styles.dayOption,
+                      isActive && styles.monthOptionActive,
+                      pressed && styles.monthOptionPressed,
+                    ]}>
+                    <Text style={[styles.monthOptionText, isActive && styles.monthOptionTextActive]}>
+                      {String(day).padStart(2, '0')}
                     </Text>
                   </Pressable>
                 );
@@ -770,6 +945,34 @@ const styles = StyleSheet.create({
     color: '#5b655f',
     fontSize: 13,
     lineHeight: 20,
+  },
+  historyModeRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  historyModeButton: {
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: '#d7ddd9',
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 42,
+    paddingHorizontal: 10,
+  },
+  historyModeButtonActive: {
+    backgroundColor: globalStyles.colors.primaryGreen,
+    borderColor: globalStyles.colors.primaryGreen,
+  },
+  historyModeText: {
+    color: '#111111',
+    fontSize: 13,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  historyModeTextActive: {
+    color: '#ffffff',
   },
   stateBox: {
     alignItems: 'center',
@@ -965,11 +1168,39 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 10,
   },
+  dayOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 14,
+  },
   yearOptions: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
     marginBottom: 14,
+  },
+  yearStepper: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  yearStepButton: {
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 10,
+    height: 40,
+    justifyContent: 'center',
+    width: 44,
+  },
+  yearStepperText: {
+    color: '#111111',
+    fontSize: 18,
+    fontWeight: '700',
+    minWidth: 72,
+    textAlign: 'center',
   },
   monthOption: {
     alignItems: 'center',
@@ -992,6 +1223,14 @@ const styles = StyleSheet.create({
   },
   monthOptionTextActive: {
     color: '#ffffff',
+  },
+  dayOption: {
+    alignItems: 'center',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 10,
+    minWidth: 44,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
   },
   yearOption: {
     alignItems: 'center',

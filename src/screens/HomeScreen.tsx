@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Header from '@/src/components/Header';
-import QuickActionButton from '@/src/components/QuickActionButton';
 import OverallStatusCard from '@/src/components/StatCard';
 import ZoneCard from '@/src/components/ZoneCard';
 import { useIotAutoRefresh } from '@/src/hooks/useIotAutoRefresh';
@@ -69,10 +68,6 @@ export default function HomeScreen() {
     }, [loadSummary]),
   );
 
-  const showAction = (message: string) => {
-    Alert.alert('Aksi cepat', message);
-  };
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView
@@ -128,23 +123,6 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.section}>
-              <View style={styles.manualBar}>
-                <QuickActionButton
-                  backgroundColor="transparent"
-                  iconName="water-pump"
-                  onPress={() => showAction('Perintah irigasi siap dikirim ke perangkat.')}
-                  title="Siram Manual"
-                />
-                <QuickActionButton
-                  backgroundColor="#F1E3D5"
-                  iconName="stop-circle"
-                  onPress={() => showAction('Semua katup akan dihentikan.')}
-                  title="Hentikan Semua"
-                />
-              </View>
-            </View>
-
-            <View style={styles.section}>
               <View style={styles.zoneList}>
                 {primaryZone ? (
                   <ZoneCard
@@ -191,17 +169,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '900',
     letterSpacing: 0,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  manualBar: {
-    backgroundColor: globalStyles.colors.warningOrange,
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 10,
-    padding: 10,
   },
   zoneList: {
     gap: 12,

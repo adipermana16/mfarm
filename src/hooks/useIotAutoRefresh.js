@@ -3,6 +3,7 @@ import { useCallback, useRef } from 'react';
 import { AppState } from 'react-native';
 
 import { fetchIotReadings } from '@/src/services/api';
+import { saveIotReadingsToCache } from '@/src/services/iotHistoryCache';
 
 function pickLatestReading(payload) {
   if (Array.isArray(payload)) {
@@ -18,6 +19,34 @@ function pickLatestReading(payload) {
   }
 
   return payload ?? null;
+}
+
+function normalizeReadings(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (Array.isArray(payload?.readings)) {
+    return payload.readings;
+  }
+
+  if (Array.isArray(payload?.history)) {
+    return payload.history;
+  }
+
+  if (Array.isArray(payload?.items)) {
+    return payload.items;
+  }
+
+  if (Array.isArray(payload?.results)) {
+    return payload.results;
+  }
+
+  if (Array.isArray(payload?.data)) {
+    return payload.data;
+  }
+
+  return payload ? [payload] : [];
 }
 
 function buildReadingSignature(reading) {
@@ -48,13 +77,16 @@ export function useIotAutoRefresh(onDataChanged, intervalMs = 5000) {
     isCheckingRef.current = true;
 
     try {
-      const payload = await fetchIotReadings(1);
+      const payload = await fetchIotReadings();
+      const readings = normalizeReadings(payload);
       const latestReading = pickLatestReading(payload);
       const nextSignature = buildReadingSignature(latestReading);
 
       if (!nextSignature) {
         return;
       }
+
+      await saveIotReadingsToCache(readings);
 
       if (latestSignatureRef.current === null) {
         latestSignatureRef.current = nextSignature;
