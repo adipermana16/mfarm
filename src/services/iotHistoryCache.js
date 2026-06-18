@@ -11,10 +11,15 @@ function getReadingTimestamp(reading) {
   return (
     reading?.timestamp ??
     reading?.recordedAt ??
+    reading?.recorded_at ??
     reading?.createdAt ??
     reading?.updatedAt ??
-    reading?.time ??
     reading?.date ??
+    reading?.tanggal ??
+    reading?.waktuTanggal ??
+    reading?.datetime ??
+    reading?.dateTime ??
+    reading?.time ??
     reading?.created_at ??
     reading?.updated_at ??
     null
@@ -22,7 +27,9 @@ function getReadingTimestamp(reading) {
 }
 
 function getReadingCacheKey(reading, index) {
-  return reading?.id ?? reading?._id ?? getReadingTimestamp(reading) ?? JSON.stringify(reading) ?? `reading-${index}`;
+  const timestamp = getReadingTimestamp(reading);
+  const time = reading?.waktu ?? reading?.jam ?? '';
+  return reading?.id ?? reading?._id ?? (timestamp ? `${timestamp}-${time}` : null) ?? JSON.stringify(reading) ?? `reading-${index}`;
 }
 
 export function mergeIotReadings(...readingGroups) {

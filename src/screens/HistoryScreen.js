@@ -33,6 +33,59 @@ const HISTORY_MODES = {
   ALL: 'all',
   DATE: 'date',
 };
+const DATE_KEYS = [
+  'timestamp',
+  'recordedAt',
+  'recorded_at',
+  'createdAt',
+  'updatedAt',
+  'date',
+  'created_at',
+  'updated_at',
+  'tanggal',
+  'waktuTanggal',
+  'datetime',
+  'dateTime',
+];
+const TIME_KEYS = ['waktu', 'jam', 'time'];
+const MONTH_NAME_TO_NUMBER = {
+  ags: 8,
+  agu: 8,
+  agustus: 8,
+  apr: 4,
+  april: 4,
+  aug: 8,
+  august: 8,
+  dec: 12,
+  december: 12,
+  des: 12,
+  desember: 12,
+  feb: 2,
+  februari: 2,
+  february: 2,
+  jan: 1,
+  januari: 1,
+  january: 1,
+  jul: 7,
+  juli: 7,
+  july: 7,
+  jun: 6,
+  juni: 6,
+  june: 6,
+  mar: 3,
+  maret: 3,
+  march: 3,
+  may: 5,
+  mei: 5,
+  nov: 11,
+  november: 11,
+  oct: 10,
+  october: 10,
+  okt: 10,
+  oktober: 10,
+  sep: 9,
+  september: 9,
+};
 
 function Card({ children, style }) {
   return <View style={[styles.card, style]}>{children}</View>;
@@ -66,11 +119,120 @@ function normalizeReadings(payload) {
   return [];
 }
 
-async function fetchAllHistoryReadings() {
+function normalizeTimeParts(timeText) {
+  if (timeText == null) {
+    return [0, 0, 0];
+  }
+
+  const match = String(timeText).trim().match(/^(\d{1,2})[:.](\d{1,2})(?:[:.](\d{1,2}))?/);
+
+  if (!match) {
+    return [0, 0, 0];
+  }
+
+  return [
+    Number(match[1]) || 0,
+    Number(match[2]) || 0,
+    Number(match[3]) || 0,
+  ];
+}
+
+function parseLocalDateParts(day, month, year, timeText = null) {
+  const parsedDay = Number(day);
+  const parsedMonth = Number(month);
+  const parsedYear = Number(year);
+
+  if (!parsedDay || !parsedMonth || !parsedYear) {
+    return null;
+  }
+
+  const [hours, minutes, seconds] = normalizeTimeParts(timeText);
+  const date = new Date(parsedYear, parsedMonth - 1, parsedDay, hours, minutes, seconds);
+
+  if (
+    date.getFullYear() !== parsedYear ||
+    date.getMonth() + 1 !== parsedMonth ||
+    date.getDate() !== parsedDay
+  ) {
+    return null;
+  }
+
+  return date;
+}
+
+function parseReadingDateValue(value, timeValue = null) {
+  if (value == null) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const epochMs = value < 100000000000 ? value * 1000 : value;
+    const date = new Date(epochMs);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  const text = String(value).trim();
+
+  if (!text) {
+    return null;
+  }
+
+  if (/^\d+$/.test(text)) {
+    return parseReadingDateValue(Number(text), timeValue);
+  }
+
+  const slashOrDashDate = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[ T,]+(.+))?$/);
+  if (slashOrDashDate) {
+    return parseLocalDateParts(slashOrDashDate[1], slashOrDashDate[2], slashOrDashDate[3], slashOrDashDate[4] ?? timeValue);
+  }
+
+  const yearFirstDate = text.match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})(?:[ T,]+(.+))?$/);
+  if (yearFirstDate && !text.includes('T') && !/[zZ]|[+-]\d{2}:?\d{2}$/.test(text)) {
+    return parseLocalDateParts(yearFirstDate[3], yearFirstDate[2], yearFirstDate[1], yearFirstDate[4] ?? timeValue);
+  }
+
+  const namedMonthDate = text
+    .toLowerCase()
+    .replace(/\./g, '')
+    .match(/^(\d{1,2})\s+([a-z]+)\s+(\d{4})(?:[,\s]+(.+))?$/);
+  if (namedMonthDate) {
+    const month = MONTH_NAME_TO_NUMBER[namedMonthDate[2]];
+    if (month) {
+      return parseLocalDateParts(namedMonthDate[1], month, namedMonthDate[3], namedMonthDate[4] ?? timeValue);
+    }
+  }
+
+  const parsedDate = new Date(timeValue ? `${text} ${timeValue}` : text);
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate;
+}
+
+async function fetchMonthHistoryReadings(selectedDate) {
+  const daysInMonth = getDaysInMonth(selectedDate.year, selectedDate.month);
+  const dailyResults = await Promise.allSettled(
+    Array.from({ length: daysInMonth }, (_, index) =>
+      fetchHistory({
+        day: index + 1,
+        month: selectedDate.month,
+        year: selectedDate.year,
+      }),
+    ),
+  );
+
+  return dailyResults.flatMap((result) => (
+    result.status === 'fulfilled' ? normalizeReadings(result.value) : []
+  ));
+}
+
+async function fetchAllHistoryReadings(selectedDate, includeMonthHistory = true) {
   const cachedReadings = await readCachedIotReadings();
-  const [iotReadingsResult, historyResult] = await Promise.allSettled([
+  const [iotReadingsResult, historyResult, monthHistoryResult] = await Promise.allSettled([
     fetchIotReadings(),
     fetchHistory(),
+    includeMonthHistory ? fetchMonthHistoryReadings(selectedDate) : Promise.resolve([]),
   ]);
 
   const iotReadings = iotReadingsResult.status === 'fulfilled'
@@ -79,27 +241,33 @@ async function fetchAllHistoryReadings() {
   const historyReadings = historyResult.status === 'fulfilled'
     ? normalizeReadings(historyResult.value)
     : [];
+  const monthHistoryReadings = monthHistoryResult.status === 'fulfilled'
+    ? monthHistoryResult.value
+    : [];
 
-  if (iotReadingsResult.status === 'rejected' && historyResult.status === 'rejected' && cachedReadings.length === 0) {
+  if (
+    iotReadingsResult.status === 'rejected' &&
+    historyResult.status === 'rejected' &&
+    monthHistoryResult.status === 'rejected' &&
+    cachedReadings.length === 0
+  ) {
     throw iotReadingsResult.reason ?? historyResult.reason;
   }
 
-  const mergedReadings = mergeIotReadings(cachedReadings, historyReadings, iotReadings);
+  const mergedReadings = mergeIotReadings(cachedReadings, historyReadings, monthHistoryReadings, iotReadings);
   return saveIotReadingsToCache(mergedReadings);
 }
 
 function getReadingTimestamp(reading) {
-  return (
-    reading?.timestamp ??
-    reading?.recordedAt ??
-    reading?.createdAt ??
-    reading?.updatedAt ??
-    reading?.time ??
-    reading?.date ??
-    reading?.created_at ??
-    reading?.updated_at ??
-    null
-  );
+  const dateValue = findValueByKeys(reading, DATE_KEYS);
+  const timeValue = findValueByKeys(reading, TIME_KEYS);
+  return dateValue ?? timeValue ?? null;
+}
+
+function getReadingDate(reading) {
+  const dateValue = findValueByKeys(reading, DATE_KEYS);
+  const timeValue = findValueByKeys(reading, TIME_KEYS);
+  return parseReadingDateValue(dateValue ?? timeValue, dateValue ? timeValue : null);
 }
 
 function findValueByKeys(object, keys, visited = new WeakSet()) {
@@ -233,7 +401,7 @@ function buildReadingEntries(readings) {
   return readings
     .map((reading, index) => {
       const timestamp = getReadingTimestamp(reading);
-      const date = timestamp ? new Date(timestamp) : null;
+      const date = getReadingDate(reading);
 
       if (!date || Number.isNaN(date.getTime())) {
         return null;
@@ -530,9 +698,9 @@ export default function HistoryScreen() {
         setIsLoading(true);
       }
       setErrorMessage(null);
-      const readings = await fetchAllHistoryReadings();
-      const entries = buildReadingEntries(readings);
       const nextSelectedDate = clampSelectedDate(selectedDate);
+      const readings = await fetchAllHistoryReadings(nextSelectedDate, mode !== 'poll');
+      const entries = buildReadingEntries(readings);
       const nextDateOptions = buildDateOptions(entries, nextSelectedDate);
       setAvailableDateOptions(nextDateOptions);
       if (getSelectedDateKey(nextSelectedDate) !== getSelectedDateKey(selectedDate)) {

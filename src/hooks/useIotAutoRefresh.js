@@ -59,8 +59,14 @@ function buildReadingSignature(reading) {
     reading._id ??
     reading.timestamp ??
     reading.recordedAt ??
+    reading.recorded_at ??
     reading.createdAt ??
     reading.updatedAt ??
+    reading.date ??
+    reading.tanggal ??
+    reading.waktuTanggal ??
+    reading.datetime ??
+    reading.dateTime ??
     JSON.stringify(reading)
   );
 }
