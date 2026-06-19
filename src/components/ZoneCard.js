@@ -1,31 +1,9 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { useMemo } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Polygon, Polyline, Stop } from 'react-native-svg';
 
-import { dataStyles, getSwitchColors, globalStyles } from '@/src/styles/globalStyles';
-
-function buildArcPath(value) {
-  const clampedValue = Math.max(0, Math.min(value, 100));
-  const startAngle = 180;
-  const endAngle = 180 + (clampedValue / 100) * 180;
-  const radius = 48;
-  const center = 58;
-
-  const toPoint = (angle) => {
-    const radians = (angle * Math.PI) / 180;
-    return {
-      x: center + radius * Math.cos(radians),
-      y: center + radius * Math.sin(radians),
-    };
-  };
-
-  const start = toPoint(startAngle);
-  const end = toPoint(endAngle);
-  const largeArcFlag = clampedValue > 50 ? 1 : 0;
-
-  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${end.x} ${end.y}`;
-}
+import { dataStyles, globalStyles } from '@/src/styles/globalStyles';
 
 function buildTrendPoints(values) {
   if (!values.length) {
@@ -71,18 +49,15 @@ export default function ZoneCard({
   initialValveOn = false,
   isExpanded = true,
 }) {
-  const [isValveOn, setIsValveOn] = useState(initialValveOn);
-  const [isManualMode, setIsManualMode] = useState(false);
-  const gaugePath = useMemo(() => buildArcPath(soilMoisture), [soilMoisture]);
+  const isValveOn = initialValveOn;
   const trendPoints = useMemo(() => buildTrendPoints(trendData), [trendData]);
-  const switchColors = getSwitchColors(isValveOn && isManualMode);
 
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <View>
           <Text style={styles.zoneTitle}>
-            {zoneName} - {fieldName}
+            {fieldName ? `${zoneName} - ${fieldName}` : zoneName}
           </Text>
         </View>
         <MaterialCommunityIcons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={20} color="#111111" />
@@ -135,46 +110,6 @@ export default function ZoneCard({
             <Text style={styles.metricUnit}>lux</Text>
           </View>
 
-          <View style={styles.metricCard}>
-            <View style={[styles.metricIconBox, { backgroundColor: isManualMode ? (isValveOn ? '#E8F5E9' : '#F1F5F9') : '#E8E8FF' }]}>
-              <MaterialCommunityIcons name="valve" size={24} color={isManualMode ? (isValveOn ? globalStyles.colors.primaryGreen : '#64748B') : '#6366F1'} />
-            </View>
-            <Text style={styles.metricLabel}>Mode</Text>
-            <View style={styles.modeToggleContainer}>
-              <Text style={[styles.modeButton, !isManualMode && styles.modeButtonActive]}>
-                Otomatis
-              </Text>
-              <Switch
-                onValueChange={setIsManualMode}
-                thumbColor={isManualMode ? '#3c6255' : '#CBD5E1'}
-                trackColor={{ false: '#E2E8F0', true: '#D1FAE5' }}
-                value={isManualMode}
-                style={styles.modeSwitch}
-              />
-              <Text style={[styles.modeButton, isManualMode && styles.modeButtonActive]}>
-                Manual
-              </Text>
-            </View>
-          </View>
-
-          {isManualMode && (
-            <View style={styles.metricCard}>
-              <View style={[styles.metricIconBox, { backgroundColor: isValveOn ? '#E8F5E9' : '#F1F5F9' }]}>
-                <MaterialCommunityIcons name={isValveOn ? 'pipe-valve' : 'pipe-valve-closed'} size={24} color={isValveOn ? globalStyles.colors.primaryGreen : '#64748B'} />
-              </View>
-              <Text style={styles.metricLabel}>Katup</Text>
-              <Text style={[styles.metricValue, { color: isValveOn ? globalStyles.colors.primaryGreen : '#64748B' }]}>
-                {isValveOn ? 'BUKA' : 'MATI'}
-              </Text>
-              <Switch
-                onValueChange={setIsValveOn}
-                thumbColor={switchColors.thumbColor}
-                trackColor={switchColors.trackColor}
-                value={isValveOn}
-                style={styles.metricSwitch}
-              />
-            </View>
-          )}
         </View>
       </View>
 
@@ -330,29 +265,6 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     fontSize: 10,
     fontWeight: '400',
-  },
-  metricSwitch: {
-    marginTop: 4,
-  },
-  modeToggleContainer: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 4,
-    justifyContent: 'space-between',
-    width: '100%',
-  },
-  modeButton: {
-    color: '#94A3B8',
-    fontSize: 10,
-    fontWeight: '500',
-  },
-  modeButtonActive: {
-    color: '#111111',
-    fontWeight: '700',
-  },
-  modeSwitch: {
-    marginVertical: 0,
-    marginHorizontal: -2,
   },
   sensorPanel: {
     flex: 1,

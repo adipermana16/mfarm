@@ -175,7 +175,7 @@ export default function HomeScreen() {
                 {primaryZone ? (
                   <ZoneCard
                     airHumidity={primaryZone.airHumidity}
-                    fieldName={primaryZone.crop}
+                    fieldName=""
                     initialValveOn={primaryZone.initialValveOn}
                     isExpanded
                     key={primaryZone.id}
@@ -183,7 +183,7 @@ export default function HomeScreen() {
                     soilMoisture={primaryZone.moisture}
                     temperature={primaryZone.temperature}
                     trendData={primaryZone.trendData}
-                    zoneName={primaryZone.name}
+                    zoneName="Lahan Tomat"
                   />
                 ) : (
                   <View style={styles.stateBox}>
