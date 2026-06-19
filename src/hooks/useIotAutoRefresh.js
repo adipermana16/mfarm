@@ -1,5 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { fetchIotReadings } from '@/src/services/api';
@@ -71,9 +71,34 @@ function buildReadingSignature(reading) {
   );
 }
 
-export function useIotAutoRefresh(onDataChanged, intervalMs = 5000) {
+function getReadingTimestamp(reading) {
+  return (
+    reading?.receivedAt ??
+    reading?.received_at ??
+    reading?.recordedAt ??
+    reading?.recorded_at ??
+    reading?.timestamp ??
+    reading?.createdAt ??
+    reading?.created_at ??
+    null
+  );
+}
+
+function isReadingFresh(reading, offlineAfterMs) {
+  const timestamp = getReadingTimestamp(reading);
+  const timestampMs = timestamp ? Date.parse(timestamp) : Number.NaN;
+
+  if (!Number.isFinite(timestampMs)) {
+    return false;
+  }
+
+  return Date.now() - timestampMs <= offlineAfterMs;
+}
+
+export function useIotAutoRefresh(onDataChanged, intervalMs = 5000, offlineAfterMs = 60000) {
   const latestSignatureRef = useRef(null);
   const isCheckingRef = useRef(false);
+  const [isDeviceOnline, setIsDeviceOnline] = useState(false);
 
   const checkLatestReading = useCallback(async () => {
     if (isCheckingRef.current) {
@@ -89,9 +114,11 @@ export function useIotAutoRefresh(onDataChanged, intervalMs = 5000) {
       const nextSignature = buildReadingSignature(latestReading);
 
       if (!nextSignature) {
+        setIsDeviceOnline(false);
         return;
       }
 
+      setIsDeviceOnline(isReadingFresh(latestReading, offlineAfterMs));
       await saveIotReadingsToCache(readings);
 
       if (latestSignatureRef.current === null) {
@@ -104,11 +131,11 @@ export function useIotAutoRefresh(onDataChanged, intervalMs = 5000) {
         onDataChanged?.();
       }
     } catch {
-      // Biarkan layar tetap menggunakan data terakhir jika watcher IoT gagal sesaat.
+      setIsDeviceOnline(false);
     } finally {
       isCheckingRef.current = false;
     }
-  }, [onDataChanged]);
+  }, [offlineAfterMs, onDataChanged]);
 
   useFocusEffect(
     useCallback(() => {
@@ -130,4 +157,6 @@ export function useIotAutoRefresh(onDataChanged, intervalMs = 5000) {
       };
     }, [checkLatestReading, intervalMs]),
   );
+
+  return isDeviceOnline;
 }

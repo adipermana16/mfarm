@@ -7,6 +7,7 @@ const defaultItems = [
   {
     icon: 'water-percent',
     label: 'Rata-rata Kelembapan Tanah',
+    status: 'Optimal',
     value: '68%',
     color: globalStyles.colors.primaryBlue,
   },
@@ -17,8 +18,8 @@ const defaultItems = [
     color: globalStyles.colors.primaryGreen,
   },
   {
-    icon: 'weather-partly-cloudy',
-    label: 'Cuaca Lokal',
+    icon: 'thermometer',
+    label: 'Suhu Rata-rata',
     value: '29 C',
     color: globalStyles.colors.warningOrange,
   },
@@ -30,11 +31,32 @@ const defaultItems = [
   },
 ];
 
-export default function StatCard({ items = defaultItems }) {
+const moistureStatusColors = {
+  Kritis: '#b91c1c',
+  Offline: '#64748b',
+  Optimal: globalStyles.colors.primaryGreen,
+  Peringatan: '#c2410c',
+};
+
+function parsePercentage(value) {
+  const parsedValue = Number.parseFloat(String(value));
+
+  if (!Number.isFinite(parsedValue)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.min(parsedValue, 100));
+}
+
+export default function StatCard({ items = defaultItems, isOnline = true }) {
   const moisture = items.find((item) => item.label === 'Rata-rata Kelembapan Tanah') ?? defaultItems[0];
   const valves = items.find((item) => item.label === 'Katup Aktif') ?? defaultItems[1];
-  const weather = items.find((item) => item.label === 'Cuaca Lokal') ?? defaultItems[2];
+  const temperature =
+    items.find((item) => item.label === 'Suhu Rata-rata' || item.label === 'Cuaca Lokal') ?? defaultItems[2];
   const light = items.find((item) => item.label === 'Intensitas Cahaya') ?? defaultItems[3];
+  const moisturePercentage = parsePercentage(moisture.value);
+  const moistureStatus = isOnline ? (moisture.status ?? 'Optimal') : 'Offline';
+  const moistureStatusColor = moistureStatusColors[moistureStatus] ?? globalStyles.colors.primaryGreen;
 
   return (
     <View style={styles.card}>
@@ -44,7 +66,7 @@ export default function StatCard({ items = defaultItems }) {
         <View style={styles.leftColumn}>
           <Text style={styles.lineText}>
             Rata-rata Kelembapan Tanah: <Text style={styles.boldText}>{moisture.value}</Text>{' '}
-            <Text style={styles.optimalText}>(Optimal)</Text>
+            <Text style={{ color: moistureStatusColor }}>({moistureStatus})</Text>
           </Text>
           <Text style={styles.lineText}>
             Katup Aktif: <Text style={styles.boldText}>{valves.value}</Text>
@@ -56,18 +78,32 @@ export default function StatCard({ items = defaultItems }) {
             </Text>
           </View>
           <View style={styles.progressTrack}>
-            <View style={styles.progressFill} />
+            <View
+              style={[
+                styles.progressFill,
+                {
+                  backgroundColor: moistureStatusColor,
+                  width: `${moisturePercentage}%`,
+                },
+              ]}
+            />
           </View>
         </View>
 
         <View style={styles.weatherColumn}>
-          <Text style={styles.weatherLabel}>Cuaca Lokal</Text>
+          <Text style={styles.weatherLabel}>Suhu Rata-rata</Text>
           <View style={styles.weatherRow}>
             <View>
-              <Text style={styles.weatherValue}>{weather.value}</Text>
-              <Text style={styles.weatherCaption}>Cerah</Text>
+              <Text style={styles.weatherValue}>{temperature.value}</Text>
+              <Text style={[styles.weatherCaption, !isOnline && styles.offlineText]}>
+                {isOnline ? 'Data sensor' : 'Offline'}
+              </Text>
             </View>
-            <MaterialCommunityIcons name="weather-sunny" size={28} color="#F5B82E" />
+            <MaterialCommunityIcons
+              name={temperature.icon}
+              size={28}
+              color={isOnline ? temperature.color : '#64748b'}
+            />
           </View>
         </View>
       </View>
@@ -120,9 +156,6 @@ const styles = StyleSheet.create({
   boldText: {
     fontWeight: '700',
   },
-  optimalText: {
-    color: globalStyles.colors.primaryGreen,
-  },
   progressTrack: {
     backgroundColor: '#DADADA',
     borderRadius: 3,
@@ -135,7 +168,6 @@ const styles = StyleSheet.create({
     backgroundColor: globalStyles.colors.primaryGreen,
     borderRadius: 3,
     height: 6,
-    width: 58,
   },
   weatherColumn: {
     minWidth: 84,
@@ -158,5 +190,8 @@ const styles = StyleSheet.create({
   weatherCaption: {
     color: '#111111',
     fontSize: 12,
+  },
+  offlineText: {
+    color: '#64748b',
   },
 });

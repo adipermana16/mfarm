@@ -32,12 +32,27 @@ type FarmSummary = {
   }[];
 };
 
+function getMoistureStatus(moisture: number, isOnline: boolean) {
+  if (!isOnline) {
+    return 'Offline';
+  }
+
+  if (moisture <= 40) {
+    return 'Kritis';
+  }
+
+  if (moisture <= 55) {
+    return 'Peringatan';
+  }
+
+  return 'Optimal';
+}
+
 export default function HomeScreen() {
   const [summary, setSummary] = useState<FarmSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const primaryZone = summary?.zones?.[0] ?? null;
 
   const loadSummary = useCallback(async (mode: 'initial' | 'refresh' | 'poll' = 'initial') => {
     try {
@@ -62,11 +77,34 @@ export default function HomeScreen() {
     loadSummary();
   }, [loadSummary]);
 
-  useIotAutoRefresh(
+  const isDeviceOnline = useIotAutoRefresh(
     useCallback(() => {
       loadSummary('poll');
     }, [loadSummary]),
   );
+  const displayedSummary = summary
+    ? {
+        ...summary,
+        stats: {
+          ...summary.stats,
+          activeZones: isDeviceOnline ? summary.stats.activeZones : 0,
+          lightIntensity: isDeviceOnline ? summary.stats.lightIntensity : 0,
+          soilMoisture: isDeviceOnline ? summary.stats.soilMoisture : 0,
+          temperature: isDeviceOnline ? summary.stats.temperature : 0,
+          waterTank: isDeviceOnline ? summary.stats.waterTank : 0,
+        },
+        zones: summary.zones.map((zone) => ({
+          ...zone,
+          airHumidity: isDeviceOnline ? zone.airHumidity : 0,
+          initialValveOn: isDeviceOnline ? zone.initialValveOn : false,
+          lightIntensity: isDeviceOnline ? zone.lightIntensity : 0,
+          moisture: isDeviceOnline ? zone.moisture : 0,
+          temperature: isDeviceOnline ? zone.temperature : 0,
+          trendData: isDeviceOnline ? zone.trendData : zone.trendData.map(() => 0),
+        })),
+      }
+    : null;
+  const primaryZone = displayedSummary?.zones?.[0] ?? null;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -74,7 +112,7 @@ export default function HomeScreen() {
         contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={() => loadSummary('refresh')} />}
         showsVerticalScrollIndicator={false}>
-        <Header isOnline={!errorMessage} />
+        <Header isOnline={isDeviceOnline && !errorMessage} />
 
         {isLoading ? (
           <View style={styles.stateBox}>
@@ -89,34 +127,44 @@ export default function HomeScreen() {
           </View>
         ) : null}
 
-        {summary ? (
+        {!isLoading && !errorMessage && !isDeviceOnline ? (
+          <View style={styles.offlineBox}>
+            <Text style={styles.offlineText}>
+              Alat IoT tidak mengirim data selama lebih dari 1 menit. Semua nilai sensor diatur ke 0.
+            </Text>
+          </View>
+        ) : null}
+
+        {displayedSummary ? (
           <>
             <View style={styles.section}>
               <OverallStatusCard
+                isOnline={isDeviceOnline}
                 items={[
                   {
                     color: '#2563eb',
                     icon: 'water-percent',
                     label: 'Rata-rata Kelembapan Tanah',
-                    value: `${summary.stats.soilMoisture}%`,
+                    status: getMoistureStatus(displayedSummary.stats.soilMoisture, isDeviceOnline),
+                    value: `${displayedSummary.stats.soilMoisture}%`,
                   },
                   {
                     color: '#3c6255',
                     icon: 'valve',
                     label: 'Katup Aktif',
-                    value: `${summary.stats.activeZones} katup`,
+                    value: `${displayedSummary.stats.activeZones} katup`,
                   },
                   {
                     color: '#c2410c',
-                    icon: 'weather-partly-cloudy',
-                    label: 'Cuaca Lokal',
-                    value: `${summary.stats.temperature} C`,
+                    icon: 'thermometer',
+                    label: 'Suhu Rata-rata',
+                    value: `${displayedSummary.stats.temperature} C`,
                   },
                   {
                     color: '#f59e0b',
                     icon: 'white-balance-sunny',
                     label: 'Intensitas Cahaya',
-                    value: `${summary.stats.lightIntensity} lux`,
+                    value: `${displayedSummary.stats.lightIntensity} lux`,
                   },
                 ]}
               />
@@ -193,6 +241,20 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#D32F2F',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  offlineBox: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+    borderRadius: 8,
+    borderWidth: 1,
+    marginHorizontal: 20,
+    marginTop: 12,
+    padding: 14,
+  },
+  offlineText: {
+    color: '#b91c1c',
     fontSize: 14,
     fontWeight: '700',
   },

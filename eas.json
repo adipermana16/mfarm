@@ -7,12 +7,18 @@
     "preview": {
       "environment": "preview",
       "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "http://109.110.188.181/api/drip"
+      },
       "android": {
         "buildType": "apk"
       }
     },
     "production": {
       "environment": "production",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "http://109.110.188.181/api/drip"
+      },
       "android": {
         "buildType": "app-bundle"
       }
