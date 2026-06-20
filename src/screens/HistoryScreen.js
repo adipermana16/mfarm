@@ -581,8 +581,6 @@ function buildHistoryFromEntries(filteredEntries, selectedDate, historyMode = HI
     })(),
     pumpStatus: entry.pumpStatus ?? '',
     suhu: entry.temperature != null ? Math.round(entry.temperature) : '',
-    tanggal: formatDate(entry.date),
-    waktu: formatTime(entry.date),
     timestamp: entry.date.toISOString(),
   }));
 
@@ -776,12 +774,10 @@ export default function HistoryScreen() {
     const fileName = historyMode === HISTORY_MODES.ALL
       ? 'riwayat-iot-semua.csv'
       : `riwayat-iot-${getSelectedDateKey(selectedDate)}.csv`;
-    const csvHeader = ['timestamp', 'tanggal', 'waktu', 'kelembapan_tanah', 'kelembapan_udara', 'suhu', 'cahaya_lux', 'pump', 'pump_status'];
+    const csvHeader = ['timestamp', 'kelembapan_tanah', 'kelembapan_udara', 'suhu', 'cahaya_lux', 'pump', 'pump_status'];
     const csvRows = history.exportRows.map((row) =>
       [
         row.timestamp,
-        row.tanggal,
-        row.waktu,
         row.kelembapanTanah,
         row.kelembapanUdara,
         row.suhu,
