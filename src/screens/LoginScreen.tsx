@@ -73,15 +73,24 @@ export default function LoginScreen() {
   const [email, setEmail] = useState(profile.email);
   const [password, setPassword] = useState('');
 
-  const handleSignIn = () => {
-    const result = signIn({ email, password });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-    if (!result.success) {
-      Alert.alert('Login gagal', result.message ?? 'Silakan cek kembali data akun Anda.');
-      return;
+  const handleSignIn = async () => {
+    try {
+      setIsSubmitting(true);
+      const result = await signIn({ email, password });
+
+      if (!result.success) {
+        Alert.alert('Login gagal', result.message ?? 'Silakan cek kembali data akun Anda.');
+        return;
+      }
+
+      router.replace('/(tabs)');
+    } catch {
+      Alert.alert('Login gagal', 'Token sesi tidak dapat disimpan. Silakan coba lagi.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    router.replace('/(tabs)');
   };
 
   return (
@@ -131,9 +140,16 @@ export default function LoginScreen() {
               value={password}
             />
 
-            <Pressable onPress={handleSignIn} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
+            <Pressable
+              disabled={isSubmitting}
+              onPress={handleSignIn}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                pressed && styles.pressed,
+                isSubmitting && styles.disabledButton,
+              ]}>
               <MaterialCommunityIcons color="#ffffff" name="login" size={20} />
-              <Text style={styles.primaryButtonText}>Login Sekarang</Text>
+              <Text style={styles.primaryButtonText}>{isSubmitting ? 'Menyimpan sesi...' : 'Login Sekarang'}</Text>
             </Pressable>
           </View>
 
@@ -332,5 +348,8 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.88,
     transform: [{ scale: 0.995 }],
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
 });

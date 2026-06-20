@@ -1,6 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -86,9 +85,6 @@ function AccountHeader({ onOpenProfile }) {
 export default function SettingsScreen() {
   const router = useRouter();
   const { darkMode, setDarkMode, signOut, theme } = useAppPreferences();
-  const [soilMoisture, setSoilMoisture] = useState(true);
-  const [systemStatus, setSystemStatus] = useState(false);
-  const [autoSync, setAutoSync] = useState(true);
 
   const openDetail = (title) => {
     Alert.alert(title, 'Halaman detail pengaturan ini akan dibuka.');
@@ -101,8 +97,13 @@ export default function SettingsScreen() {
         text: 'Batal',
       },
       {
-        onPress: () => {
-          signOut();
+        onPress: async () => {
+          try {
+            await signOut();
+            router.replace('/');
+          } catch {
+            Alert.alert('Gagal keluar', 'Token sesi belum dapat dihapus. Silakan coba lagi.');
+          }
         },
         text: 'Keluar',
       },
@@ -132,43 +133,6 @@ export default function SettingsScreen() {
             subtitle="Daftarkan pengguna baru tanpa OTP"
             theme={theme}
             title="Registrasi Akun"
-          />
-        </CardSection>
-
-        <CardSection title="Perangkat" theme={theme}>
-          <RowItem
-            icon="chip"
-            onPress={() => openDetail('Pengendali SmartDrip')}
-            subtitle="Online, terakhir sinkron 2 menit lalu"
-            theme={theme}
-            title="Pengendali SmartDrip"
-          />
-          <ToggleRow
-            icon="sync"
-            onValueChange={setAutoSync}
-            subtitle="Kirim data sensor secara berkala"
-            theme={theme}
-            title="Sinkronisasi Otomatis"
-            value={autoSync}
-          />
-        </CardSection>
-
-        <CardSection title="Notifikasi" theme={theme}>
-          <ToggleRow
-            icon="water-percent"
-            onValueChange={setSoilMoisture}
-            subtitle="Pantau ambang kelembapan tanah"
-            theme={theme}
-            title="Kelembapan Tanah"
-            value={soilMoisture}
-          />
-          <ToggleRow
-            icon="server-network"
-            onValueChange={setSystemStatus}
-            subtitle="Info ketika sistem online atau offline"
-            theme={theme}
-            title="Status Sistem"
-            value={systemStatus}
           />
         </CardSection>
 

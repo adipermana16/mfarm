@@ -1,5 +1,5 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Switch, Text, View } from 'react-native';
 
 import { getSwitchColors } from '@/src/styles/globalStyles';
@@ -8,6 +8,16 @@ export default function ScheduleCard({ schedule, onToggleChange }) {
   const [isEnabled, setIsEnabled] = useState(schedule.isEnabled);
   const [isUpdating, setIsUpdating] = useState(false);
   const switchColors = getSwitchColors(isEnabled);
+  const durationLabel =
+    typeof schedule.durationMinutes === 'number'
+      ? `${schedule.durationMinutes} menit`
+      : String(schedule.duration ?? '').toLowerCase().includes('menit')
+        ? schedule.duration
+        : `${schedule.duration} menit`;
+
+  useEffect(() => {
+    setIsEnabled(schedule.isEnabled);
+  }, [schedule.isEnabled]);
 
   const handleToggle = async (nextValue) => {
     const previousValue = isEnabled;
@@ -29,7 +39,10 @@ export default function ScheduleCard({ schedule, onToggleChange }) {
       <View style={styles.cardHeader}>
         <View style={styles.titleWrap}>
           <Text style={styles.scheduleName}>{schedule.name}</Text>
-          <Text style={styles.zoneName}>{schedule.zoneName}</Text>
+          <Text style={styles.zoneName}>Lahan Tomat</Text>
+          <Text style={[styles.statusText, isEnabled ? styles.enabledText : styles.disabledText]}>
+            {isEnabled ? 'Jadwal aktif' : 'Jadwal nonaktif'}
+          </Text>
         </View>
         <Switch
           disabled={isUpdating}
@@ -48,10 +61,10 @@ export default function ScheduleCard({ schedule, onToggleChange }) {
 
       <View style={styles.divider} />
 
-<View style={styles.footerRow}>
-          <MaterialCommunityIcons name="clock-outline" size={18} color="#333333" />
-          <Text style={styles.daysText}>{schedule.duration} Menit</Text>
-        </View>
+      <View style={styles.footerRow}>
+        <MaterialCommunityIcons name="clock-outline" size={18} color="#333333" />
+        <Text style={styles.daysText}>{durationLabel}</Text>
+      </View>
     </View>
   );
 }

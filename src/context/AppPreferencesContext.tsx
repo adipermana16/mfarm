@@ -1,6 +1,7 @@
 import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { fetchProfile, saveProfile } from '@/src/services/api';
+import { clearAuthSession, createAuthSession, restoreAuthSession } from '@/src/services/authSession';
 
 type UserProfile = {
   name: string;
@@ -26,13 +27,14 @@ type AppTheme = {
 type AppPreferences = {
   darkMode: boolean;
   setDarkMode: (value: boolean) => void;
+  isSessionReady: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
-  signIn: (credentials: { email: string; password: string }) => { success: boolean; message?: string };
-  signOut: () => void;
+  signIn: (credentials: { email: string; password: string }) => Promise<{ success: boolean; message?: string }>;
+  signOut: () => Promise<void>;
   profile: UserProfile;
   updateProfile: (profile: UserProfile) => Promise<void>;
-  applyRegisteredAccount: (account: { fullName: string; email: string; phone: string }) => void;
+  applyRegisteredAccount: (account: { fullName: string; email: string; phone: string }) => Promise<void>;
   theme: AppTheme;
 };
 
@@ -94,35 +96,53 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
   const [darkMode, setDarkMode] = useState(false);
   const [profile, setProfile] = useState(initialProfile);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isSessionReady, setIsSessionReady] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
 
-    async function loadProfile() {
+    async function bootstrapSession() {
       try {
+        const storedSession = await restoreAuthSession();
+        if (storedSession && isMounted) {
+          setProfile(storedSession.profile);
+          setIsAuthenticated(true);
+          return;
+        }
+
         const nextProfile = await fetchProfile();
         if (isMounted) {
           setProfile(nextProfile);
         }
       } catch {
         // Tetap pakai data lokal bawaan jika backend belum tersedia.
+      } finally {
+        if (isMounted) {
+          setIsSessionReady(true);
+        }
       }
     }
 
-    loadProfile();
+    bootstrapSession();
 
     return () => {
       isMounted = false;
     };
   }, []);
 
-  const updateProfile = useCallback(async (nextProfile: UserProfile) => {
-    const savedProfile = await saveProfile(nextProfile);
-    setProfile(savedProfile);
-  }, []);
+  const updateProfile = useCallback(
+    async (nextProfile: UserProfile) => {
+      const savedProfile = await saveProfile(nextProfile);
+      if (isAuthenticated) {
+        await createAuthSession(savedProfile);
+      }
+      setProfile(savedProfile);
+    },
+    [isAuthenticated],
+  );
 
   const signIn = useCallback(
-    ({ email, password }: { email: string; password: string }) => {
+    async ({ email, password }: { email: string; password: string }) => {
       const normalizedEmail = email.trim().toLowerCase();
       const normalizedPassword = password.trim();
       const profileEmail = profile.email.trim().toLowerCase();
@@ -142,6 +162,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
           };
         }
 
+        await createAuthSession(adminProfile);
         setProfile(adminProfile);
         setIsAuthenticated(true);
         return { success: true };
@@ -161,37 +182,43 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         };
       }
 
+      await createAuthSession(profile);
       setIsAuthenticated(true);
       return { success: true };
     },
-    [profile.email],
+    [profile],
   );
 
-  const signOut = useCallback(() => {
+  const signOut = useCallback(async () => {
+    await clearAuthSession();
     setIsAuthenticated(false);
   }, []);
 
-  const applyRegisteredAccount = useCallback((account: { fullName: string; email: string; phone: string }) => {
+  const applyRegisteredAccount = useCallback(async (account: { fullName: string; email: string; phone: string }) => {
     const activeSince = new Intl.DateTimeFormat('id-ID', {
       month: 'long',
       year: 'numeric',
     }).format(new Date());
 
-    setProfile((current) => ({
-      ...current,
+    const nextProfile = {
+      ...profile,
       activeSince,
       email: account.email.trim(),
       name: account.fullName.trim(),
       phone: account.phone.trim(),
       role: 'Petani Terdaftar',
-    }));
+    };
+
+    await createAuthSession(nextProfile);
+    setProfile(nextProfile);
     setIsAuthenticated(true);
-  }, []);
+  }, [profile]);
 
   const value = useMemo(
     () => ({
       darkMode,
       setDarkMode,
+      isSessionReady,
       isAuthenticated,
       isAdmin: isAdminRole(profile.role),
       signIn,
@@ -201,7 +228,7 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
       applyRegisteredAccount,
       theme: darkMode ? darkTheme : lightTheme,
     }),
-    [applyRegisteredAccount, darkMode, isAuthenticated, profile, signIn, signOut, updateProfile],
+    [applyRegisteredAccount, darkMode, isAuthenticated, isSessionReady, profile, signIn, signOut, updateProfile],
   );
 
   return <AppPreferencesContext.Provider value={value}>{children}</AppPreferencesContext.Provider>;

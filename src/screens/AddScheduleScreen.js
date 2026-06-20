@@ -91,24 +91,33 @@ export default function AddScheduleScreen() {
           return;
         }
 
-        const primaryZone = summary.zones?.[0];
+        const primaryZone = Array.isArray(summary.zones)
+          ? summary.zones.find((item) => item?.id)
+          : null;
+
         if (!primaryZone) {
           setZone(null);
           setSelectedZone('');
-          setErrorMessage('Zona kebun belum tersedia dari backend.');
+          setErrorMessage('Lahan IoT belum tersedia dari backend.');
           return;
         }
 
-        const nextZone = {
-          label: `${primaryZone.name} - ${primaryZone.crop}`,
-          value: primaryZone.id,
+        const tomatoField = {
+          airHumidity: primaryZone.airHumidity,
+          label: 'Lahan Tomat',
+          lightIntensity: primaryZone.lightIntensity,
+          moisture: primaryZone.moisture,
+          temperature: primaryZone.temperature,
+          value: String(primaryZone.id),
         };
 
-        setZone(nextZone);
-        setSelectedZone(nextZone.value);
+        setZone(tomatoField);
+        setSelectedZone(tomatoField.value);
       } catch {
         if (isMounted) {
-          setErrorMessage('Zona kebun belum bisa dimuat dari backend.');
+          setZone(null);
+          setSelectedZone('');
+          setErrorMessage('Lahan IoT belum bisa dimuat dari backend.');
         }
       } finally {
         if (isMounted) {
@@ -149,7 +158,7 @@ export default function AddScheduleScreen() {
     }
 
     if (!selectedZone) {
-      setErrorMessage('Zona tujuan belum tersedia.');
+      setErrorMessage('Pilih lahan IoT tujuan.');
       return;
     }
 
@@ -200,23 +209,43 @@ export default function AddScheduleScreen() {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.label}>Zona Tujuan</Text>
+            <Text style={styles.label}>Lahan IoT Tujuan</Text>
             {isLoadingZones ? (
               <View style={styles.inlineLoading}>
                 <ActivityIndicator color={globalStyles.colors.primaryGreen} />
-                <Text style={styles.inlineLoadingText}>Memuat zona utama...</Text>
+                <Text style={styles.inlineLoadingText}>Memuat lahan IoT...</Text>
               </View>
             ) : zone ? (
               <View style={styles.singleZoneBox}>
+                <MaterialCommunityIcons
+                  name="sprout"
+                  size={20}
+                  color={globalStyles.colors.primaryGreen}
+                />
                 <Text style={styles.singleZoneText}>{zone.label}</Text>
               </View>
             ) : (
               <View style={styles.errorBox}>
-                <Text style={styles.errorText}>Zona utama belum tersedia.</Text>
+                <Text style={styles.errorText}>Lahan IoT belum tersedia.</Text>
               </View>
             )}
             {!isLoadingZones && zone ? (
-              <Text style={styles.helperText}>Zona ini dipakai otomatis untuk jadwal baru.</Text>
+              <View style={styles.iotZoneInfo}>
+                <View style={styles.iotZoneHeader}>
+                  <MaterialCommunityIcons
+                    name="access-point"
+                    size={18}
+                    color={globalStyles.colors.primaryGreen}
+                  />
+                  <Text style={styles.iotZoneTitle}>Data IoT lahan terpilih</Text>
+                </View>
+                <Text style={styles.helperText}>
+                  Kelembapan tanah {zone.moisture ?? 0}% | Suhu {zone.temperature ?? 0} C
+                </Text>
+                <Text style={styles.helperText}>
+                  Kelembapan udara {zone.airHumidity ?? 0}% | Cahaya {zone.lightIntensity ?? 0} lux
+                </Text>
+              </View>
             ) : null}
           </View>
 
@@ -289,12 +318,13 @@ export default function AddScheduleScreen() {
           ) : null}
 
           <Pressable
-            disabled={isSaving}
+            disabled={isSaving || isLoadingZones || !selectedZone}
             onPress={handleSave}
             style={({ pressed }) => [
               buttonStyles.saveButton,
               styles.saveButton,
               (pressed || isSaving) && styles.saveButtonPressed,
+              (isLoadingZones || !selectedZone) && styles.saveButtonDisabled,
             ]}>
             {isSaving ? (
               <ActivityIndicator color="#ffffff" />
@@ -518,19 +548,39 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  singleZoneBox: {
+  iotZoneInfo: {
     backgroundColor: '#f8faf6',
     borderColor: '#dce5d8',
     borderRadius: 8,
     borderWidth: 1,
-    minHeight: 40,
-    justifyContent: 'center',
+    gap: 4,
+    padding: 10,
+  },
+  iotZoneHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 7,
+  },
+  iotZoneTitle: {
+    color: '#274c3d',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  singleZoneBox: {
+    alignItems: 'center',
+    backgroundColor: '#f8faf6',
+    borderColor: '#dce5d8',
+    borderRadius: 8,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    minHeight: 44,
     paddingHorizontal: 12,
   },
   singleZoneText: {
     color: '#111111',
     fontSize: 15,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   inlineLoading: {
     alignItems: 'center',
@@ -555,6 +605,9 @@ const styles = StyleSheet.create({
   },
   saveButtonPressed: {
     opacity: 0.86,
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
   },
   saveButtonText: {
     color: '#ffffff',

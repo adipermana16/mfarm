@@ -122,7 +122,7 @@ export default function RegisterScreen() {
 
     try {
       setIsSubmitting(true);
-      applyRegisteredAccount({
+      await applyRegisteredAccount({
         email: form.email.trim(),
         fullName: form.fullName.trim(),
         phone: form.phone.trim(),

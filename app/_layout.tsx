@@ -15,7 +15,7 @@ export const unstable_settings = {
 void SplashScreen.preventAutoHideAsync();
 
 function RootLayoutContent() {
-  const { darkMode, isAuthenticated } = useAppPreferences();
+  const { darkMode, isAuthenticated, isSessionReady } = useAppPreferences();
   const [isBooting, setIsBooting] = useState(true);
 
   useEffect(() => {
@@ -36,7 +36,7 @@ function RootLayoutContent() {
     };
   }, []);
 
-  if (isBooting) {
+  if (isBooting || !isSessionReady) {
     return <AppSplashScreen />;
   }
 

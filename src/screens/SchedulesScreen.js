@@ -74,6 +74,7 @@ export default function SchedulesScreen() {
       );
     } catch {
       setErrorMessage('Status jadwal belum bisa diperbarui.');
+      throw new Error('Status jadwal belum bisa diperbarui.');
     }
   };
 

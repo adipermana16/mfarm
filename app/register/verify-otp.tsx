@@ -59,7 +59,7 @@ export default function VerifyOtpScreen() {
     try {
       setIsSubmitting(true);
       const result = await verifyRegistrationOtp(params.requestId, otp);
-      applyRegisteredAccount({
+      await applyRegisteredAccount({
         email: result.user.email,
         fullName: result.user.fullName,
         phone: result.user.phone,
