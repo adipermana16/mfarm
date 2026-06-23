@@ -125,6 +125,7 @@ export default function RegisterScreen() {
       await applyRegisteredAccount({
         email: form.email.trim(),
         fullName: form.fullName.trim(),
+        password: form.password,
         phone: form.phone.trim(),
       });
       Alert.alert('Registrasi berhasil', 'Akun baru berhasil dibuat dan siap digunakan.', [

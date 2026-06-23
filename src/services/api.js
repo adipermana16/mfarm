@@ -86,7 +86,9 @@ async function request(path, options = {}) {
   });
 
   if (!response.ok) {
-    throw new Error(data?.message ?? `Permintaan ke ${url} gagal.`);
+    const error = new Error(data?.message ?? `Permintaan ke ${url} gagal.`);
+    error.status = response.status;
+    throw error;
   }
 
   return data;
@@ -155,14 +157,29 @@ export function fetchHistory(params = {}) {
   return request(query ? `/history?${query}` : '/history');
 }
 
-export function fetchProfile() {
-  return request('/profile');
+export function fetchProfile(email) {
+  const query = email ? `?email=${encodeURIComponent(email)}` : '';
+  return request(`/profile${query}`);
 }
 
-export function saveProfile(profile) {
+export function saveProfile(profile, accountEmail) {
   return request('/profile', {
-    body: JSON.stringify(profile),
+    body: JSON.stringify({ ...profile, accountEmail }),
     method: 'PUT',
+  });
+}
+
+export function registerAccount(payload) {
+  return request('/auth/register', {
+    body: JSON.stringify(payload),
+    method: 'POST',
+  });
+}
+
+export function loginAccount(payload) {
+  return request('/auth/login', {
+    body: JSON.stringify(payload),
+    method: 'POST',
   });
 }
 
@@ -229,6 +246,7 @@ function toStoredUser(payload) {
     email: payload.email.trim(),
     fullName: payload.fullName.trim(),
     id: `usr-${Date.now()}`,
+    password: payload.password,
     phone: payload.phone.trim(),
   };
 }

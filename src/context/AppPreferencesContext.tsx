@@ -1,7 +1,13 @@
 import { createContext, PropsWithChildren, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { fetchProfile, saveProfile } from '@/src/services/api';
-import { clearAuthSession, createAuthSession, restoreAuthSession } from '@/src/services/authSession';
+import { fetchProfile, loginAccount, registerAccount, saveProfile } from '@/src/services/api';
+import {
+  clearAuthSession,
+  createAuthSession,
+  findAccountProfile,
+  restoreAuthSession,
+  saveAccountProfile,
+} from '@/src/services/authSession';
 
 type UserProfile = {
   name: string;
@@ -34,7 +40,7 @@ type AppPreferences = {
   signOut: () => Promise<void>;
   profile: UserProfile;
   updateProfile: (profile: UserProfile) => Promise<void>;
-  applyRegisteredAccount: (account: { fullName: string; email: string; phone: string }) => Promise<void>;
+  applyRegisteredAccount: (account: { fullName: string; email: string; phone: string; password: string }) => Promise<void>;
   theme: AppTheme;
 };
 
@@ -132,20 +138,20 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
 
   const updateProfile = useCallback(
     async (nextProfile: UserProfile) => {
-      const savedProfile = await saveProfile(nextProfile);
+      const savedProfile = await saveProfile(nextProfile, profile.email);
       if (isAuthenticated) {
+        await saveAccountProfile(savedProfile, profile.email);
         await createAuthSession(savedProfile);
       }
       setProfile(savedProfile);
     },
-    [isAuthenticated],
+    [isAuthenticated, profile.email],
   );
 
   const signIn = useCallback(
     async ({ email, password }: { email: string; password: string }) => {
       const normalizedEmail = email.trim().toLowerCase();
       const normalizedPassword = password.trim();
-      const profileEmail = profile.email.trim().toLowerCase();
 
       if (!normalizedEmail || !normalizedPassword) {
         return {
@@ -168,21 +174,44 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
         return { success: true };
       }
 
-      if (normalizedEmail !== profileEmail) {
+      let accountProfile: UserProfile | null = null;
+
+      try {
+        const result = await loginAccount({
+          email: normalizedEmail,
+          password: normalizedPassword,
+        });
+        accountProfile = result.profile;
+      } catch (error) {
+        if (error && typeof error === 'object' && 'status' in error) {
+          return {
+            message: error instanceof Error ? error.message : 'Email atau password tidak sesuai.',
+            success: false,
+          };
+        }
+
+        const storedAccountProfile = await findAccountProfile(normalizedEmail);
+        const currentProfile =
+          profile.email.trim().toLowerCase() === normalizedEmail ? profile : null;
+        accountProfile = storedAccountProfile ?? currentProfile;
+      }
+
+      if (!accountProfile) {
         return {
           message: 'Email belum terdaftar di aplikasi.',
           success: false,
         };
       }
 
-      if (normalizedPassword.length < 8) {
+      if (!accountProfile || normalizedPassword.length < 8) {
         return {
-          message: 'Password minimal 8 karakter.',
+          message: accountProfile ? 'Password minimal 8 karakter.' : 'Email atau password tidak sesuai.',
           success: false,
         };
       }
 
-      await createAuthSession(profile);
+      await createAuthSession(accountProfile);
+      setProfile(accountProfile);
       setIsAuthenticated(true);
       return { success: true };
     },
@@ -194,25 +223,41 @@ export function AppPreferencesProvider({ children }: PropsWithChildren) {
     setIsAuthenticated(false);
   }, []);
 
-  const applyRegisteredAccount = useCallback(async (account: { fullName: string; email: string; phone: string }) => {
+  const applyRegisteredAccount = useCallback(async (account: {
+    fullName: string;
+    email: string;
+    phone: string;
+    password: string;
+  }) => {
     const activeSince = new Intl.DateTimeFormat('id-ID', {
       month: 'long',
       year: 'numeric',
     }).format(new Date());
 
-    const nextProfile = {
-      ...profile,
+    const localProfile: UserProfile = {
       activeSince,
       email: account.email.trim(),
+      farmArea: 'Belum diatur',
+      farmName: 'Kebun Saya',
+      location: 'Belum diatur',
       name: account.fullName.trim(),
       phone: account.phone.trim(),
       role: 'Petani Terdaftar',
     };
 
+    const result = await registerAccount({
+      email: account.email.trim(),
+      fullName: account.fullName.trim(),
+      password: account.password,
+      phone: account.phone.trim(),
+      profile: localProfile,
+    });
+    const nextProfile = result.profile ?? localProfile;
+
     await createAuthSession(nextProfile);
     setProfile(nextProfile);
     setIsAuthenticated(true);
-  }, [profile]);
+  }, []);
 
   const value = useMemo(
     () => ({

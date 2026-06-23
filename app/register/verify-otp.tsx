@@ -62,6 +62,7 @@ export default function VerifyOtpScreen() {
       await applyRegisteredAccount({
         email: result.user.email,
         fullName: result.user.fullName,
+        password: result.user.password ?? '',
         phone: result.user.phone,
       });
       Alert.alert('Registrasi berhasil', 'Akun Anda sudah dibuat dan siap digunakan.', [

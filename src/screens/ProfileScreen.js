@@ -1,10 +1,13 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAppPreferences } from '@/src/context/AppPreferencesContext';
+import { useIotAutoRefresh } from '@/src/hooks/useIotAutoRefresh';
+import { fetchFarmSummary, fetchSchedules } from '@/src/services/api';
 import { globalStyles } from '@/src/styles/globalStyles';
 
 function InfoRow({ icon, label, value, field, draft, setDraft, isEditing, theme }) {
@@ -44,6 +47,38 @@ export default function ProfileScreen() {
   const { profile, updateProfile, theme } = useAppPreferences();
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(profile);
+  const [activeZones, setActiveZones] = useState(0);
+  const [scheduleCount, setScheduleCount] = useState(0);
+
+  const loadProfileMetrics = useCallback(async () => {
+    const [summaryResult, schedulesResult] = await Promise.allSettled([
+      fetchFarmSummary(),
+      fetchSchedules(),
+    ]);
+
+    if (summaryResult.status === 'fulfilled') {
+      const summary = summaryResult.value;
+      const nextActiveZones = Number(summary?.stats?.activeZones);
+      setActiveZones(Number.isFinite(nextActiveZones) ? nextActiveZones : 0);
+    } else {
+      setActiveZones(0);
+    }
+
+    if (schedulesResult.status === 'fulfilled') {
+      const schedules = Array.isArray(schedulesResult.value) ? schedulesResult.value : [];
+      setScheduleCount(schedules.length);
+    } else {
+      setScheduleCount(0);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadProfileMetrics();
+    }, [loadProfileMetrics]),
+  );
+
+  const isDeviceOnline = useIotAutoRefresh(loadProfileMetrics);
 
   const initials = profile.name
     .split(' ')
@@ -127,28 +162,14 @@ export default function ProfileScreen() {
               <Text style={[styles.role, { color: theme.mutedText }]}>{profile.role}</Text>
             </>
           )}
-          <View style={styles.locationPill}>
-            <MaterialCommunityIcons name="map-marker" size={15} color={globalStyles.colors.primaryGreenDark} />
-            {isEditing ? (
-              <TextInput
-                onChangeText={(text) => setDraft((current) => ({ ...current, location: text }))}
-                placeholder="Lokasi"
-                placeholderTextColor={globalStyles.colors.primaryGreenDark}
-                style={styles.locationInput}
-                value={draft.location}
-              />
-            ) : (
-              <Text style={styles.locationText}>{profile.location}</Text>
-            )}
-          </View>
         </View>
 
         <View style={[styles.metricsCard, { backgroundColor: theme.card }]}>
-          <MetricItem value="3" label="Zona aktif" theme={theme} />
+          <MetricItem value={String(isDeviceOnline ? activeZones : 0)} label="Zona aktif" theme={theme} />
           <View style={[styles.metricDivider, { backgroundColor: theme.border }]} />
-          <MetricItem value="12" label="Jadwal" theme={theme} />
+          <MetricItem value={String(scheduleCount)} label="Jadwal" theme={theme} />
           <View style={[styles.metricDivider, { backgroundColor: theme.border }]} />
-          <MetricItem value="98%" label="Online" theme={theme} />
+          <MetricItem value={isDeviceOnline ? 'Online' : 'Offline'} label="Status IoT" theme={theme} />
         </View>
 
         <View style={[styles.card, { backgroundColor: theme.card }]}>
@@ -252,29 +273,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginTop: 4,
-  },
-  locationPill: {
-    alignItems: 'center',
-    backgroundColor: '#F1F8F2',
-    borderRadius: 8,
-    flexDirection: 'row',
-    gap: 5,
-    marginTop: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  locationText: {
-    color: globalStyles.colors.primaryGreenDark,
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  locationInput: {
-    color: globalStyles.colors.primaryGreenDark,
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '700',
-    minWidth: 150,
-    padding: 0,
   },
   heroInputs: {
     gap: 8,
