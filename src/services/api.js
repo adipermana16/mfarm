@@ -1,7 +1,7 @@
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-const PRODUCTION_API_BASE_URL = 'http://109.110.188.181/api/drip';
+const PRODUCTION_API_BASE_URL = 'http://109.110.188.181:9000/api/drip';
 
 function normalizeApiBaseUrl(baseUrl) {
   const sanitizedBaseUrl = baseUrl.replace(/\/+$/, '');
