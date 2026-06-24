@@ -61,7 +61,7 @@ Backend drip tersedia di `http://localhost:5000/api/drip` dengan endpoint utama:
 Jika aplikasi akan dihubungkan ke VPS, buat file `.env` di folder `mfarm` dengan isi berikut sebelum menjalankan Expo:
 
 ```bash
-EXPO_PUBLIC_API_BASE_URL=http://109.110.188.181:9000/api/drip
+EXPO_PUBLIC_API_BASE_URL=http://43.156.89.66:9000/api/drip
 ```
 
 Jika env diisi hanya host dasar atau `.../api`, aplikasi sekarang akan menormalkannya otomatis ke namespace `.../api/drip`.
