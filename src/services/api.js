@@ -47,6 +47,14 @@ const OTP_TTL_MS = 5 * 60 * 1000;
 const registrationDatabase = [];
 const pendingOtpStore = new Map();
 
+function formatLogPayload(payload) {
+  try {
+    return JSON.stringify(payload, null, 2);
+  } catch {
+    return payload;
+  }
+}
+
 async function request(path, options = {}) {
   const url = `${API_BASE_URL}${path}`;
   const method = options.method ?? 'GET';
@@ -78,12 +86,12 @@ async function request(path, options = {}) {
   const isJson = response.headers.get('content-type')?.includes('application/json');
   const data = isJson ? await response.json() : null;
 
-  console.log(`[API] Response ${method} ${url}`, {
+  console.log(`[API] Response ${method} ${url}`, formatLogPayload({
     data,
     ok: response.ok,
     status: response.status,
     statusText: response.statusText,
-  });
+  }));
 
   if (!response.ok) {
     const error = new Error(data?.message ?? `Permintaan ke ${url} gagal.`);
@@ -113,6 +121,14 @@ export function fetchIotReadings(limit) {
   return request(query ? `/iot/readings?${query}` : '/iot/readings');
 }
 
+export function fetchIotControl({ deviceId = 'esp32-drip-01', zoneId = 'zone-a' } = {}) {
+  const searchParams = new URLSearchParams();
+  searchParams.set('device_id', deviceId);
+  searchParams.set('zone_id', zoneId);
+
+  return request(`/iot/control?${searchParams.toString()}`);
+}
+
 export function createIotReading(payload) {
   return request('/iot/readings', {
     body: JSON.stringify(payload),
@@ -136,6 +152,66 @@ export function updateScheduleStatus(scheduleId, isEnabled) {
     body: JSON.stringify({ isEnabled }),
     method: 'PATCH',
   });
+}
+
+export function fetchAutomationRules() {
+  return request('/automation');
+}
+
+export function createAutomationRule(payload) {
+  return request('/automation', {
+    body: JSON.stringify(payload),
+    method: 'POST',
+  });
+}
+
+export function updateAutomationRule(ruleId, payload) {
+  return request(`/automation/${ruleId}`, {
+    body: JSON.stringify(payload),
+    method: 'PUT',
+  });
+}
+
+export function deleteAutomationRule(ruleId) {
+  return request(`/automation/${ruleId}`, {
+    method: 'DELETE',
+  });
+}
+
+export function fetchAutomationHistory() {
+  return request('/automation/history');
+}
+
+export function fetchIrrigationZones() {
+  return request('/automation/zones');
+}
+
+export function createIrrigationZone(payload) {
+  return request('/automation/zones', {
+    body: JSON.stringify(payload),
+    method: 'POST',
+  });
+}
+
+export function updateIrrigationZone(zoneId, payload) {
+  return request(`/automation/zones/${zoneId}`, {
+    body: JSON.stringify(payload),
+    method: 'PUT',
+  });
+}
+
+export function deleteIrrigationZone(zoneId) {
+  return request(`/automation/zones/${zoneId}`, {
+    method: 'DELETE',
+  });
+}
+
+export function fetchWaterTank() {
+  return request('/water-tank');
+}
+
+export function fetchWaterUsage() {
+  return request('/water-usage');
 }
 
 export function fetchHistory(params = {}) {

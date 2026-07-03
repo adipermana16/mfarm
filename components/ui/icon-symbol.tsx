@@ -17,6 +17,7 @@ const MAPPING = {
   'house.fill': 'home',
   calendar: 'calendar-today',
   clock: 'history',
+  'drop.fill': 'water-drop',
   gear: 'settings',
   'paperplane.fill': 'send',
   'chevron.left.forwardslash.chevron.right': 'code',

@@ -60,6 +60,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="automation"
+        options={{
+          title: 'Irigasi Otomatis',
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="drop.fill" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: 'Pengaturan',
